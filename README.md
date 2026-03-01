@@ -92,6 +92,9 @@ Depending on options used, you'll get:
 -   Step log (MTL_Steps\_\*.log)\
 -   Optional transcript log
 
+Use `-LogDir <path>` if you want step and transcript logs written to a
+different directory than `-OutputDir`.
+
 Even if you tone down console output, the logs are still there.
 
 ------------------------------------------------------------------------

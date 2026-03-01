@@ -38,6 +38,37 @@ Describe 'Test-ImtRunInputs' {
   }
 }
 
+Describe 'Initialize-ImtRunContext logging paths' {
+  It 'defaults logs to OutputDir when LogDir is not provided' {
+    $outputDir = Join-Path $env:TEMP ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $outputDir | Out-Null
+
+    try {
+      $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $outputDir -OutputLevel INFO
+      (Split-Path -Path $ctx.StepLogPath -Parent) | Should Be $outputDir
+      (Split-Path -Path $ctx.RunTranscriptPath -Parent) | Should Be $outputDir
+    } finally {
+      Remove-Item -LiteralPath $outputDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  It 'writes logs to LogDir when provided' {
+    $outputDir = Join-Path $env:TEMP ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $logDir = Join-Path $env:TEMP ("imt-core-tests-logs-{0}" -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $outputDir | Out-Null
+
+    try {
+      $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $outputDir -LogDir $logDir -OutputLevel INFO
+      (Split-Path -Path $ctx.StepLogPath -Parent) | Should Be $logDir
+      (Split-Path -Path $ctx.RunTranscriptPath -Parent) | Should Be $logDir
+      $ctx.LogDir | Should Be $logDir
+    } finally {
+      Remove-Item -LiteralPath $outputDir -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $logDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 Describe 'Orchestrator usage path' {
   It 'prints usage when invoked without parameters' {
     $scriptPath = Join-Path $repoRoot 'Invoke-ExchangeMessageAudit.ps1'

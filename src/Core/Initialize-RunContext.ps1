@@ -11,6 +11,7 @@ function Initialize-ImtRunContext {
     [datetime]$StartDate,
     [datetime]$EndDate,
     [string]$OutputDir,
+    [string]$LogDir,
     [string]$SubjectLike,
     [string[]]$Keywords,
     [switch]$HasAttachmentOnly,
@@ -33,6 +34,10 @@ function Initialize-ImtRunContext {
 
   if (-not (Test-Path -LiteralPath $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
+  }
+  $effectiveLogDir = if ([string]::IsNullOrWhiteSpace($LogDir)) { $OutputDir } else { $LogDir }
+  if (-not (Test-Path -LiteralPath $effectiveLogDir)) {
+    New-Item -ItemType Directory -Path $effectiveLogDir | Out-Null
   }
 
   $hasSenderInput = (-not [string]::IsNullOrWhiteSpace($SenderAddress)) -or ($Senders -and $Senders.Count -gt 0)
@@ -74,10 +79,11 @@ function Initialize-ImtRunContext {
     RawSenderList = @($rawSenderList)
     SafeRecipient = $safeRecipient
     SafeSender = $safeSender
-    StepLogPath = Join-Path $OutputDir ("MTL_Steps_{0}.log" -f $ts)
-    RunTranscriptPath = Join-Path $OutputDir ("MTL_RunTranscript_{0}.log" -f $ts)
+    StepLogPath = Join-Path $effectiveLogDir ("MTL_Steps_{0}.log" -f $ts)
+    RunTranscriptPath = Join-Path $effectiveLogDir ("MTL_RunTranscript_{0}.log" -f $ts)
     OutputLevel = $OutputLevel.ToUpperInvariant()
     OutputDir = $OutputDir
+    LogDir = $effectiveLogDir
     HasSenderInput = $hasSenderInput
     RecipientMode = $recipientMode
     PairMode = $pairMode
@@ -89,6 +95,7 @@ function Initialize-ImtRunContext {
       DaysBack = $DaysBack
       StartDate = $StartDate
       EndDate = $EndDate
+      LogDir = $effectiveLogDir
       SubjectLike = $SubjectLike
       Keywords = @($Keywords)
       HasAttachmentOnly = [bool]$HasAttachmentOnly

@@ -17,6 +17,7 @@ param(
   [datetime]$StartDate,
   [datetime]$EndDate,
   [string]$OutputDir = 'C:\Temp',
+  [string]$LogDir,
   [string]$SubjectLike,
   [string[]]$Keywords,
   [switch]$HasAttachmentOnly,
@@ -54,6 +55,7 @@ Core Parameters
 -StartDate <datetime> -EndDate <datetime>
 -Keywords <string[]>
 -OutputDir <path>
+-LogDir <path> (optional; defaults to OutputDir)
 -OutputLevel <DEBUG|INFO|WARN|ERROR|CRITICAL> (default: INFO)
 
 Export Parameters
@@ -68,6 +70,7 @@ Examples
 --------
 .\Invoke-ExchangeMessageAudit.ps1 -Participants "user1@contoso.org","user2@contoso.org" -StartDate "2025-01-01" -EndDate "2025-01-31" -Keywords "audit" -OutputLevel INFO
 .\Invoke-ExchangeMessageAudit.ps1 -Participants "user1@contoso.org" -ExportPstRoot "\\fileserver\PSTExports" -PreflightOnly -OutputLevel DEBUG
+.\Invoke-ExchangeMessageAudit.ps1 -Participants "user1@contoso.org" -OutputDir "C:\Temp\Audit" -LogDir "D:\AuditLogs" -OutputLevel INFO
 "@
   Write-Host $usage
 }
@@ -113,6 +116,7 @@ $runContext = Initialize-ImtRunContext `
   -StartDate $StartDate `
   -EndDate $EndDate `
   -OutputDir $OutputDir `
+  -LogDir $LogDir `
   -SubjectLike $SubjectLike `
   -Keywords $Keywords `
   -HasAttachmentOnly:$HasAttachmentOnly `
