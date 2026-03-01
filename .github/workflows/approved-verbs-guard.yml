@@ -1,0 +1,29 @@
+﻿name: CI - Approved Verbs Guard
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  approved-verbs:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+
+      - name: Run approved verbs guard
+        shell: pwsh
+        run: |
+          Import-Module PSScriptAnalyzer -Force
+          ./scripts/Test-ApprovedVerbs.ps1
