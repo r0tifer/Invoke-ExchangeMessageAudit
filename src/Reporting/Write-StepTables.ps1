@@ -37,11 +37,13 @@ function Write-ImtFormattedTable {
     return $false
   }
 
-  $displayRows = if ($MaxRows -gt 0) {
-    @($rowArray | Select-Object -First $MaxRows)
-  } else {
-    $rowArray
-  }
+  $displayRows = @(
+    if ($MaxRows -gt 0) {
+      @($rowArray | Select-Object -First $MaxRows)
+    } else {
+      $rowArray
+    }
+  )
 
   Write-Host ("[INFO] [{0}] [Table] {1}" -f $StepName, $Title) -ForegroundColor Gray
 
@@ -54,8 +56,10 @@ function Write-ImtFormattedTable {
   $tableText = $tableInput | Format-Table -AutoSize | Out-String -Width 4096
   Write-Host $tableText -ForegroundColor Gray
 
-  if ($displayRows.Count -lt $rowArray.Count) {
-    Write-Host ("[INFO] [{0}] [Table] Showing first {1} of {2} rows." -f $StepName, $displayRows.Count, $rowArray.Count) -ForegroundColor DarkGray
+  $displayCount = @($displayRows).Count
+  $rowCount = @($rowArray).Count
+  if ($displayCount -lt $rowCount) {
+    Write-Host ("[INFO] [{0}] [Table] Showing first {1} of {2} rows." -f $StepName, $displayCount, $rowCount) -ForegroundColor DarkGray
   }
 
   return $true
@@ -311,10 +315,10 @@ function Write-ImtStepDataTables {
   if (-not $hasDetails) {
     $metricRows = @()
     if ($StepResult.PSObject.Properties.Name -contains 'Metrics') {
-      $metricRows = ConvertTo-ImtMetricTableRows -Metrics $StepResult.Metrics
+      $metricRows = @(ConvertTo-ImtMetricTableRows -Metrics $StepResult.Metrics)
     }
 
-    if ($metricRows.Count -gt 0) {
+    if (@($metricRows).Count -gt 0) {
       [void](Write-ImtFormattedTable -StepName $stepName -Title 'Step metrics' -Rows $metricRows -Columns @('Metric','Value') -MaxRows $MaxRows)
     } else {
       $outcome = @([pscustomobject]@{
