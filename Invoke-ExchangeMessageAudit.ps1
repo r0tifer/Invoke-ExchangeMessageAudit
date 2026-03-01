@@ -91,6 +91,7 @@ $moduleFiles = @(
   'src\\Export\\Invoke-MailboxExportRequests.ps1',
   'src\\MailboxSearch\\Invoke-DirectMailboxSearch.ps1',
   'src\\Reporting\\Export-CombinedKeywordReports.ps1',
+  'src\\Reporting\\Write-StepTables.ps1',
   'src\\Tracking\\Invoke-MessageTrailTrace.ps1',
   'src\\Reporting\\Write-RunSummary.ps1'
 )
@@ -172,6 +173,7 @@ function Invoke-ImtStep {
   }
 
   Write-ImtLog -Level $level -Step $StepName -EventType Result -Message $result.Summary
+  Write-ImtStepDataTables -StepResult $result
   if ($result.Status -eq 'FAIL') {
     throw $result.Summary
   }
@@ -189,6 +191,7 @@ function Add-ImtSkippedStep {
   $result = New-ImtModuleResult -StepName $StepName -Status 'SKIP' -Summary $Summary -Data $null -Metrics @{} -Errors @()
   [void]$stepResults.Add($result)
   Write-ImtLog -Level INFO -Step $StepName -EventType Result -Message $Summary
+  Write-ImtStepDataTables -StepResult $result
   $result
 }
 
