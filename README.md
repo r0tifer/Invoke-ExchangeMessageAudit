@@ -84,17 +84,10 @@ Use `-OutputLevel` to control terminal verbosity:
 
 ## Pull Down Full Repository and Subcomponents
 
-Run these commands to fully clone and hydrate all tracked components:
-
 ```powershell
-git clone --recurse-submodules <YOUR_REPO_URL>
+git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit
 cd Invoke-ExchangeMessageAudit
 
-git submodule sync --recursive
-git submodule update --init --recursive
-
-git fetch --all --tags
-git pull --ff-only --recurse-submodules
 ```
 
 If your remote uses a different folder name, `cd` into that folder instead.
