@@ -1,169 +1,268 @@
 ﻿# Invoke-ExchangeMessageAudit
 
-Modular Exchange mail-tracing and audit orchestration for Exchange 2013/2016/2019.
+A modular Exchange message tracing and audit workflow for Exchange 2013
+/ 2016 / 2019.
 
-## Purpose
+Built because doing this manually over and over is painful.
 
-`Invoke-ExchangeMessageAudit` is a PowerShell-based audit tool that helps Exchange administrators trace message flow, validate export readiness, run mailbox-level search estimates, and produce evidence-ready CSV/log artifacts.
+------------------------------------------------------------------------
 
-The project is intentionally modular:
+## Why This Exists
 
-- One orchestrator script runs the workflow end-to-end.
-- Each subscript in `src/` has a single authoritative role.
-- Logging and step reporting are centralized and output-level controlled.
+If you've ever had to:
 
-## Intent
+-   Prove who sent what and when\
+-   Trace a message across transport hops\
+-   Validate export readiness before legal comes knocking\
+-   Run keyword checks before creating PST exports\
+-   Or just figure out why Exchange did something weird
 
-This project is designed for operational audit and investigation use cases:
+...you already know it's never just one command.
 
-- Message delivery investigations (who sent/received, when, and how).
-- Compliance and legal prep (keyword-based trace and mailbox export request creation).
-- Environment health checks for retention visibility and export prerequisites.
-- Repeatable run logging with durable artifacts for review and handoff.
+This project ties those moving parts together into a single repeatable
+workflow. Not magic. Just structure, logging, and less guesswork.
 
-## Core Functionality
+------------------------------------------------------------------------
 
-- Identity resolution for participants and sender filters.
-- Transport topology discovery across Exchange transport services.
-- Message tracking query and filtering (date window, participants, subject, keywords, failures).
-- Optional retention snapshot collection and export.
-- Optional mailbox export preflight and export request creation.
-- Optional direct mailbox search estimates (`Search-Mailbox`).
-- Optional combined keyword summaries (transport + mailbox estimates).
-- Optional full message trail tracing by `MessageId` or latest result.
-- Final run summary with step statuses and timing.
+## What This Actually Does
 
-## Auditing Capabilities
+This is not just a message tracking wrapper.
 
-The module generates auditable outputs for evidence and troubleshooting:
+It orchestrates:
 
-- Main message tracking CSV export.
-- Keyword hit summaries (overall and by mailbox).
-- Direct mailbox search summary and keyword hit exports.
-- Retention snapshot CSV.
-- Mailbox export request summary CSV.
-- Message trail CSV (full-hop trace).
-- Step log (`MTL_Steps_*.log`) with structured event records.
-- Optional transcript log (`MTL_RunTranscript_*.log`).
+-   Identity resolution (participants, senders, mailbox validation)
+-   Transport topology discovery
+-   Message tracking queries with filtering
+-   Keyword-based audit logic
+-   Optional mailbox search estimates
+-   Optional export preflight checks
+-   Optional mailbox export request creation
+-   Message trail tracing by MessageId
+-   Structured CSV artifacts and run logs
+
+It produces outputs you can hand to:
+
+-   Compliance
+-   Legal
+-   Leadership
+-   Or the next poor soul who inherits your ticket
+
+------------------------------------------------------------------------
+
+## Design Philosophy
+
+I kept this modular on purpose.
+
+-   One orchestrator script runs the show.
+-   Each module in src/ has a single job.
+-   Logging is centralized.
+-   Output verbosity is controlled.
+-   Artifacts are structured and predictable.
+
+You can follow the flow. You can debug it. You can extend it without
+everything exploding.
+
+------------------------------------------------------------------------
+
+## Common Use Cases
+
+-   Delivery investigations\
+-   Legal discovery prep\
+-   Compliance keyword audits\
+-   Retention visibility checks\
+-   Export readiness validation\
+-   Repeatable audit documentation
+
+If you're tired of cobbling together 6 cmdlets every time, this helps.
+
+------------------------------------------------------------------------
+
+## Output Artifacts
+
+Every run generates structured artifacts. Not just console noise.
+
+Depending on options used, you'll get:
+
+-   Primary message tracking CSV\
+-   Keyword summaries (overall + per mailbox)\
+-   Direct mailbox search exports\
+-   Retention snapshot CSV\
+-   Mailbox export request summary\
+-   Full message trail trace CSV\
+-   Step log (MTL_Steps\_\*.log)\
+-   Optional transcript log
+
+Even if you tone down console output, the logs are still there.
+
+------------------------------------------------------------------------
 
 ## Output Levels
 
-Use `-OutputLevel` to control terminal verbosity:
+Control verbosity with -OutputLevel.
 
-- `INFO`: step start, step result, final summary.
-- `DEBUG`: includes detailed progress diagnostics.
-- `WARN`: warnings/failures plus final summary.
-- `ERROR`: errors/failures plus final summary.
-- `CRITICAL`: fatal-only console output plus minimal summary.
+-   INFO -- Normal step progress + summary\
+-   DEBUG -- Detailed diagnostics\
+-   WARN -- Warnings and summary\
+-   ERROR -- Errors and summary\
+-   CRITICAL -- Fatal-only output
 
-## Repository Layout
+Logs still capture everything regardless.
 
-- `Invoke-ExchangeMessageAudit.ps1`: Orchestrator entrypoint.
-- `src/Core`: Run context and input validation.
-- `src/Logging`: Central logging system.
-- `src/Identity`: Participant/sender/mailbox resolution.
-- `src/Exchange`: Topology and retention snapshot logic.
-- `src/Tracking`: Message tracking audit and trail trace.
-- `src/Export`: Export preflight and mailbox export request creation.
-- `src/MailboxSearch`: Direct mailbox estimate logic.
-- `src/Reporting`: CSV/report composition and final summary.
-- `src/Models`: Shared result object contracts.
-- `scripts`: Utility scripts (for example, approved verb guard).
-- `tests`: Pester test suite.
+------------------------------------------------------------------------
 
-## Prerequisites
+## Repo Layout
 
-- Windows PowerShell 5.1 or PowerShell 7+.
-- Exchange Management Shell context for Exchange cmdlets.
-- RBAC/permissions appropriate for:
-  - `Get-MessageTrackingLog`
-  - `Get-Recipient` / `Get-Mailbox`
-  - `New-MailboxExportRequest` (when export is used)
-  - `Search-Mailbox` (when direct mailbox search is used)
-- UNC export path and server/share permissions when using export features.
+Invoke-ExchangeMessageAudit.ps1 \# Main orchestrator
 
-## Pull Down Full Repository and Subcomponents
+src/ Core/ \# Context + validation Logging/ \# Logging engine Identity/
+\# Mailbox + participant resolution Exchange/ \# Topology + retention
+snapshot Tracking/ \# Message tracking + trail tracing Export/ \# Export
+preflight + PST creation MailboxSearch/ \# Direct mailbox estimate logic
+Reporting/ \# CSV + summary composition Models/ \# Shared result objects
 
-```powershell
-git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit
+scripts/ \# Utility scripts tests/ \# Pester test suite
+
+Don't move folders around unless you update the orchestrator. It
+dot-sources everything.
+
+------------------------------------------------------------------------
+
+## Requirements
+
+-   Windows PowerShell 5.1 or PowerShell 7+
+-   Exchange Management Shell context (or Exchange cmdlets loaded)
+-   Proper RBAC permissions for:
+    -   Get-MessageTrackingLog
+    -   Get-Recipient
+    -   Get-Mailbox
+    -   Search-Mailbox (if used)
+    -   New-MailboxExportRequest (if used)
+-   Valid UNC path and permissions for PST exports
+
+If Exchange cmdlets aren't available, certain features will skip or
+fail. That's expected.
+
+------------------------------------------------------------------------
+
+## Getting Started
+
+You've got two ways to run this:
+
+-   Clone it and run directly (quick + dirty)
+-   Install it like a proper PowerShell module (recommended)
+
+------------------------------------------------------------------------
+
+### Option 1 -- Clone and Run (Quick Method)
+
+git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit\
 cd Invoke-ExchangeMessageAudit
 
-```
+Unblock scripts:
 
-If your remote uses a different folder name, `cd` into that folder instead.
+Get-ChildItem -Recurse -Filter \*.ps1 \| Unblock-File
 
-## Usage
+Temporarily allow execution for this session:
 
-1. Open Exchange Management Shell (recommended) or PowerShell with Exchange snap-ins/modules available.
-2. Navigate to the cloned repository root.
-3. Unblock downloaded scripts.
-
-```powershell
-Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
-```
-
-4. Set execution policy for current process only.
-
-```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
 
-5. Validate that the orchestrator and modules are present.
+Run it:
 
-```powershell
-Get-ChildItem .\src -Recurse -Filter *.ps1
-```
+.`\Invoke`{=tex}-ExchangeMessageAudit.ps1
 
-6. Run usage/help output.
+That works fine. But if you plan to use it more than once... install it
+properly.
 
-```powershell
-.\Invoke-ExchangeMessageAudit.ps1
-```
+------------------------------------------------------------------------
 
-## Quick Start
+## Option 2 -- Install as a PowerShell Module (Recommended)
 
-Example trace with participants and keyword filters:
+### Install for Current User (No Admin Required)
 
-```powershell
-.\Invoke-ExchangeMessageAudit.ps1 `
-  -Participants 'user1@contoso.org','user2@contoso.org' `
-  -StartDate '2025-01-01 00:00:00' `
-  -EndDate '2025-01-31 23:59:59' `
-  -Keywords 'audit','invoice' `
-  -OutputDir 'C:\Temp' `
-  -OutputLevel INFO
-```
+Install into your personal module path:
 
-Preflight-only export readiness check:
+\$modulePath = Join-Path \$HOME
+"Documents`\PowerShell`{=tex}`\Modules`{=tex}`\Invoke`{=tex}-ExchangeMessageAudit"\
+git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit
+\$modulePath
 
-```powershell
-.\Invoke-ExchangeMessageAudit.ps1 `
-  -Participants 'user1@contoso.org' `
-  -ExportPstRoot '\\fileserver\PSTExports' `
-  -PreflightOnly `
-  -OutputLevel DEBUG
-```
+If you're on Windows PowerShell 5.1:
 
-## Validation and CI Guard
+\$modulePath = Join-Path \$HOME
+"Documents`\WindowsPowerShell`{=tex}`\Modules`{=tex}`\Invoke`{=tex}-ExchangeMessageAudit"
 
-Run tests locally:
+Then:
 
-```powershell
-Invoke-Pester -Path .\tests
-```
+Import-Module Invoke-ExchangeMessageAudit -Force
 
-Run approved-verb guard locally:
+Now you can call it from anywhere:
 
-```powershell
-Import-Module PSScriptAnalyzer -Force
-.\scripts\Test-ApprovedVerbs.ps1
-```
+Invoke-ExchangeMessageAudit
 
-GitHub Actions includes a CI workflow that enforces approved PowerShell verbs (`PSUseApprovedVerbs`).
+------------------------------------------------------------------------
 
-## Notes
+### Install System-Wide (All Users)
 
-- `Invoke-ExchangeMessageAudit.ps1` dot-sources all subcomponents in `src/`.
-- Keep file structure intact; moving module files without updating the orchestrator will break execution.
-- Some features are environment-dependent and will skip or fail if Exchange cmdlets are unavailable.
+Requires admin rights.
 
+\$modulePath =
+"C:`\Program `{=tex}Files`\PowerShell`{=tex}`\Modules`{=tex}`\Invoke`{=tex}-ExchangeMessageAudit"\
+git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit
+\$modulePath
+
+Restart PowerShell and verify:
+
+Get-Module -ListAvailable Invoke-ExchangeMessageAudit
+
+Then run it normally:
+
+Invoke-ExchangeMessageAudit
+
+------------------------------------------------------------------------
+
+## Updating the Module
+
+cd `<module install path>`{=html}\
+git pull
+
+Reload:
+
+Import-Module Invoke-ExchangeMessageAudit -Force
+
+------------------------------------------------------------------------
+
+## Testing
+
+Run Pester tests:
+
+Invoke-Pester -Path .`\tests  `{=tex}
+
+Run approved verb validation:
+
+Import-Module PSScriptAnalyzer -Force\
+.`\scripts`{=tex}`\Test`{=tex}-ApprovedVerbs.ps1
+
+GitHub Actions enforces approved PowerShell verbs in CI.
+
+------------------------------------------------------------------------
+
+## Contributing
+
+If you want to improve this:
+
+-   Keep modules single-purpose\
+-   Keep logging centralized\
+-   Don't mix output formatting into core logic\
+-   Add tests
+
+PRs welcome. Just don't turn it into a 4,000 line monolith.
+
+------------------------------------------------------------------------
+
+## Final Notes
+
+This was built for real-world Exchange investigations. It's not flashy.
+It's not SaaS. It's just structured automation around things admins
+already do --- but in a way thats repeatable and defensible.
+
+If it saves you an hour on a compliance ticket, it did its job.
