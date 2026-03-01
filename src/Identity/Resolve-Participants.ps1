@@ -187,7 +187,7 @@ function Resolve-ImtMailboxesByAddressSet {
 
   [pscustomobject]@{
     Mailboxes = @($mailboxes | Sort-Object DistinguishedName -Unique)
-    Unresolved = @($unresolved)
+    Unresolved = $unresolved.ToArray()
   }
 }
 

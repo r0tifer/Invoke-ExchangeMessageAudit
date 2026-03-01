@@ -245,7 +245,7 @@ function Invoke-ImtDirectMailboxSearch {
   $status = if ($failedRows -gt 0) { 'WARN' } else { 'OK' }
 
   New-ImtModuleResult -StepName 'DirectMailboxSearch' -Status $status -Summary ("Direct mailbox search rows={0}; failed={1}; csv={2}" -f $directRows.Count, $failedRows, $directCsv) -Data ([pscustomobject]@{
-    DirectRows = @($directRows)
+    DirectRows = $directRows.ToArray()
     DirectKeywordRows = @($directKeywordRowsAll)
     NonSearchable = @($nonSearchable)
     DirectCsv = $directCsv

@@ -300,7 +300,7 @@ try {
   }
 } finally {
   $endedAt = Get-Date
-  Write-ImtRunSummary -RunContext $runContext -StepResults @($stepResults) -StartedAt $startedAt -EndedAt $endedAt | Out-Null
+  Write-ImtRunSummary -RunContext $runContext -StepResults ($stepResults.ToArray()) -StartedAt $startedAt -EndedAt $endedAt | Out-Null
   Complete-ImtLogger
 
   if ($fatalError) {

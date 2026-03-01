@@ -80,7 +80,7 @@ function Invoke-ImtMessageTrailTrace {
 
   New-ImtModuleResult -StepName 'MessageTrailTrace' -Status 'OK' -Summary ("Trail exported: {0}; Rows={1}" -f $trailCsv, $trail.Count) -Data ([pscustomobject]@{
     TraceMessageId = $traceMessageId
-    TrailRows = @($trail)
+    TrailRows = $trail.ToArray()
     TrailCsv = $trailCsv
   }) -Metrics @{
     TrailRows = $trail.Count

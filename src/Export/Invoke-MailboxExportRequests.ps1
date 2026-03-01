@@ -178,7 +178,7 @@ function Invoke-ImtMailboxExportRequests {
   $status = if ($failed -gt 0) { 'WARN' } else { 'OK' }
 
   New-ImtModuleResult -StepName 'MailboxExport' -Status $status -Summary ("Export requests: {0}; Failed: {1}; Csv: {2}" -f $exportRows.Count, $failed, $exportCsv) -Data ([pscustomobject]@{
-    ExportRows = @($exportRows)
+    ExportRows = $exportRows.ToArray()
     ExportCsv = $exportCsv
     Preflight = $preflight
   }) -Metrics @{

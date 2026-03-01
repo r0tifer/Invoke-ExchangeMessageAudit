@@ -21,26 +21,39 @@ function Invoke-ImtMessageTrackingAudit {
       $chunk = @()
 
       if ($RunContext.ParticipantMode) {
-        $fromHits = foreach ($participant in $TraceParticipants) {
-          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $participant
-        }
-        $toHits = foreach ($participant in $TraceParticipants) {
-          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $participant
-        }
-        $chunk = @($fromHits + $toHits)
+        $fromHits = @(
+          foreach ($participant in $TraceParticipants) {
+            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $participant
+          }
+        )
+        $toHits = @(
+          foreach ($participant in $TraceParticipants) {
+            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $participant
+          }
+        )
+        $chunk = @($fromHits; $toHits)
       } elseif ($RunContext.RecipientMode -and $EffectiveSenderFilters.Count -gt 0) {
-        $comboHits = foreach ($sender in $EffectiveSenderFilters) {
-          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender -Recipients $RunContext.Inputs.Recipient
-        }
+        $comboHits = @(
+          foreach ($sender in $EffectiveSenderFilters) {
+            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender -Recipients $RunContext.Inputs.Recipient
+          }
+        )
         $chunk = @($comboHits)
       } elseif ($RunContext.RecipientMode) {
-        $chunk = @(Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $RunContext.Inputs.Recipient)
+        $chunk = @(
+          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $RunContext.Inputs.Recipient
+        )
       } elseif ($EffectiveSenderFilters.Count -gt 0) {
-        $fromSenderHits = foreach ($sender in $EffectiveSenderFilters) {
-          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender
-        }
+        $fromSenderHits = @(
+          foreach ($sender in $EffectiveSenderFilters) {
+            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender
+          }
+        )
         $chunk = @($fromSenderHits)
       }
+
+      # Force single-object query results into an array to keep pipeline behavior consistent.
+      $chunk = @($chunk)
 
       if ($chunk) {
         $preFilterCount = @($chunk).Count
@@ -138,7 +151,7 @@ function Invoke-ImtMessageTrackingAudit {
   }
 
   New-ImtModuleResult -StepName 'MessageTrackingQuery' -Status 'OK' -Summary ("Tracking results collected: {0}" -f $results.Count) -Data ([pscustomobject]@{
-    Results = @($results)
+    Results = $results.ToArray()
   }) -Metrics @{
     ResultCount = $results.Count
     ServerFailures = $serverFailures
