@@ -99,19 +99,17 @@ git pull --ff-only --recurse-submodules
 
 If your remote uses a different folder name, `cd` into that folder instead.
 
-## Installation
-
-This project is script-based and does not require a compiled installer.
+## Usage
 
 1. Open Exchange Management Shell (recommended) or PowerShell with Exchange snap-ins/modules available.
 2. Navigate to the cloned repository root.
-3. Optional: unblock downloaded scripts.
+3. Unblock downloaded scripts.
 
 ```powershell
 Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
 ```
 
-4. Optional: set execution policy for current process only.
+4. Set execution policy for current process only.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
