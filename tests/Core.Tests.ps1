@@ -73,8 +73,21 @@ Describe 'Orchestrator usage path' {
   It 'prints usage when invoked without parameters' {
     $scriptPath = Join-Path $repoRoot 'Invoke-ExchangeMessageAudit.ps1'
     $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath 2>&1 | Out-String
-    $output | Should Match 'Invoke-ExchangeMessageAudit.ps1'
+    $output | Should Match 'Invoke-ExchangeMessageAudit'
     $output | Should Match 'Modular Exchange mail trace orchestrator'
+  }
+}
+
+Describe 'Module packaging' {
+  It 'imports the module manifest and exposes Invoke-ExchangeMessageAudit' {
+    $manifestPath = Join-Path $repoRoot 'Invoke-ExchangeMessageAudit.psd1'
+    Import-Module -Name $manifestPath -Force
+    try {
+      $command = Get-Command -Name Invoke-ExchangeMessageAudit -CommandType Function -ErrorAction Stop
+      $command.Name | Should Be 'Invoke-ExchangeMessageAudit'
+    } finally {
+      Remove-Module -Name Invoke-ExchangeMessageAudit -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 

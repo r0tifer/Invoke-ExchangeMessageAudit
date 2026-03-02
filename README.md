@@ -110,9 +110,12 @@ Logs still capture everything regardless.
 ## Repo Layout
 
 ```
-Invoke-ExchangeMessageAudit.ps1   # Main orchestrator
+Invoke-ExchangeMessageAudit.psd1  # Module manifest
+Invoke-ExchangeMessageAudit.psm1  # Module root (loads src/)
+Invoke-ExchangeMessageAudit.ps1   # Compatibility launcher script
 
 src/
+  Orchestration/   # Public module entrypoint
   Core/            # Context + validation
   Logging/         # Logging engine
   Identity/        # Mailbox + participant resolution
@@ -127,7 +130,7 @@ scripts/           # Utility scripts
 tests/             # Pester test suite
 ```
 
-Don’t move folders around unless you update the orchestrator. It dot-sources everything.
+Don’t move folders around unless you update the module root. It dot-sources `src/` during import.
 
 ---
 
@@ -178,7 +181,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 Run it:
 
 ```powershell
-.\Invoke-ExchangeMessageAudit.ps1
+.\Invoke-ExchangeMessageAudit.ps1 -Participants "user1@contoso.org"
 ```
 
 That works fine. But if you plan to use it more than once… install it properly.
@@ -206,6 +209,7 @@ Then:
 
 ```powershell
 Import-Module Invoke-ExchangeMessageAudit -Force
+Get-Command Invoke-ExchangeMessageAudit
 ```
 
 Now you can call it from anywhere:
