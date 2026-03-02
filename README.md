@@ -229,6 +229,19 @@ $modulePath = "C:\Program Files\PowerShell\Modules\Invoke-ExchangeMessageAudit"
 git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit $modulePath
 ```
 
+If you're on Windows PowerShell 5.1:
+
+```powershell
+$modulePath = "C:\Program Files\WindowsPowerShell\Modules\Invoke-ExchangeMessageAudit"
+git clone https://github.com/r0tifer/Invoke-ExchangeMessageAudit $modulePath
+```
+
+Then:
+
+```powershell
+Import-Module Invoke-ExchangeMessageAudit -Force
+Get-Command Invoke-ExchangeMessageAudit
+
 Restart PowerShell and verify:
 
 ```powershell
