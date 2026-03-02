@@ -107,6 +107,40 @@ Logs still capture everything regardless.
 
 ---
 
+## Available Options
+
+| Option | Type | What It Does |
+| --- | --- | --- |
+| `-Participants` | `string[]` | Mailboxes/users to trace as senders or recipients. |
+| `-Recipient` | `string` | Target recipient address for recipient-focused tracking. |
+| `-SenderAddress` (`-Sender`) | `string` | Single sender filter. |
+| `-Senders` (`-SenderList`) | `string[]` | Multiple sender filters. |
+| `-DaysBack` | `int` | Relative lookback window when explicit dates are not provided. Default: `90`. |
+| `-StartDate` | `datetime` | Start of date range (must be used with `-EndDate`). |
+| `-EndDate` | `datetime` | End of date range (must be used with `-StartDate`). |
+| `-OutputDir` | `string` | Output artifact directory. Default: `C:\Temp`. |
+| `-LogDir` | `string` | Optional log directory for step log and transcript. Defaults to `-OutputDir`. |
+| `-SubjectLike` | `string` | Subject contains filter. |
+| `-Keywords` | `string[]` | Keywords for tracking and direct mailbox keyword summaries. |
+| `-HasAttachmentOnly` | `switch` | Restrict tracking/search/export logic to messages with attachments. |
+| `-OnlyProblems` | `switch` | Keep only problematic transport events (fail/defer style events/statuses). |
+| `-TraceMessageId` | `string` | Explicit Message-Id to trail trace. |
+| `-TraceLatest` | `switch` | Automatically choose latest tracked Message-Id for trail tracing. |
+| `-SkipRetentionCheck` | `switch` | Skip retention snapshot and retention export steps. |
+| `-PromptForMailboxExport` | `switch` | Prompt interactively to create mailbox export requests. |
+| `-ExportLocatedEmails` | `switch` | Automatically create mailbox export requests (no prompt). |
+| `-ExportPstRoot` | `string` | UNC root path for PST exports and preflight checks. |
+| `-IncludeArchive` | `switch` | Include archive mailbox export requests in addition to primary mailbox. |
+| `-SkipDagPathValidation` | `switch` | Skip mailbox-server remote path validation during export preflight. |
+| `-PreflightOnly` | `switch` | Run identity/transport/preflight checks only and skip tracking/export/search steps. |
+| `-SearchMailboxesDirectly` | `switch` | Force direct mailbox estimate search step even without keywords. |
+| `-DisableTranscriptLog` | `switch` | Disable transcript logging (step logging behavior remains as implemented by logger settings). |
+| `-SearchDumpsterDirectly` | `switch` | Include dumpster when running direct mailbox estimate queries. |
+| `-ExpandExportScopeFromMatchedTraffic` | `switch` | Add matched sender/recipient traffic addresses to mailbox export target scope. |
+| `-OutputLevel` | `string` | Console verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR`, `CRITICAL`. Default: `INFO`. |
+
+---
+
 ## Repo Layout
 
 ```
@@ -159,6 +193,71 @@ You’ve got two ways to run this:
 
 ---
 
+## Example Commands
+
+Basic participant trace with keyword filtering:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Participants "alex.rivera@example.org","jamie.chen@example.org" `
+  -DaysBack 30 `
+  -Keywords "grant","audit" `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+Explicit date range with sender + recipient filtering:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Recipient "jamie.chen@example.org" `
+  -Senders "alex.rivera@example.org","notifications@example.org" `
+  -StartDate "2026-01-01 00:00:00" `
+  -EndDate "2026-01-31 23:59:59" `
+  -OnlyProblems `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+Preflight-only export validation:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Participants "alex.rivera@example.org","jamie.chen@example.org" `
+  -PreflightOnly `
+  -ExportPstRoot "\\fileserver01\PSTExports" `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel DEBUG
+```
+
+Tracking + mailbox export (non-interactive):
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Participants "alex.rivera@example.org","jamie.chen@example.org" `
+  -StartDate "2025-10-01 00:00:00" `
+  -EndDate "2026-02-28 23:59:59" `
+  -Keywords "eligibility","provider","childcare" `
+  -HasAttachmentOnly `
+  -ExportLocatedEmails `
+  -ExportPstRoot "\\fileserver01\PSTExports" `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+Trail trace by explicit Message-Id:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Participants "alex.rivera@example.org" `
+  -DaysBack 14 `
+  -TraceMessageId "<f4b7d62d-67c1-4fb8-b955-0fc9e2adf98b@example.org>" `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+---
+
 ### Option 1 – Clone and Run (Quick Method)
 
 ```powershell
@@ -181,7 +280,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 Run it:
 
 ```powershell
-.\Invoke-ExchangeMessageAudit.ps1 -Participants "user1@contoso.org"
+.\Invoke-ExchangeMessageAudit.ps1 -Participants "alex.rivera@example.org"
 ```
 
 That works fine. But if you plan to use it more than once… install it properly.
@@ -241,6 +340,7 @@ Then:
 ```powershell
 Import-Module Invoke-ExchangeMessageAudit -Force
 Get-Command Invoke-ExchangeMessageAudit
+```
 
 Restart PowerShell and verify:
 
