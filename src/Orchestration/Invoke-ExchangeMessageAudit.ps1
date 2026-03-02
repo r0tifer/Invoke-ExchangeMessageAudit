@@ -277,6 +277,7 @@ function Invoke-ExchangeMessageAudit {
   } finally {
     $endedAt = Get-Date
     $runSummaryResult = Write-ImtRunSummary -RunContext $runContext -StepResults ($stepResults.ToArray()) -StartedAt $startedAt -EndedAt $endedAt
+    Write-ImtStepDataTables -StepResult $runSummaryResult
     Complete-ImtLogger
   }
 

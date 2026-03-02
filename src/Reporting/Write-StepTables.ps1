@@ -65,6 +65,59 @@ function Write-ImtFormattedTable {
   return $true
 }
 
+function Write-ImtMailboxGroupedTables {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory=$true)][string]$StepName,
+    [Parameter(Mandatory=$true)][string]$Title,
+    [object[]]$Rows,
+    [string[]]$Columns,
+    [string]$MailboxProperty = 'Mailbox',
+    [int]$MaxRows = 25
+  )
+
+  $rowArray = @($Rows)
+  if ($rowArray.Count -eq 0) {
+    return $false
+  }
+
+  $groups = @(
+    $rowArray |
+      Group-Object -Property $MailboxProperty |
+      Sort-Object {
+        $groupName = ($_.Name -as [string])
+        if ([string]::IsNullOrWhiteSpace($groupName)) {
+          '{'
+        } else {
+          $groupName.ToLowerInvariant()
+        }
+      }
+  )
+
+  if ($groups.Count -eq 0) {
+    return $false
+  }
+
+  $hasDetails = $false
+  $separator = ('-' * 72)
+
+  foreach ($group in $groups) {
+    $mailboxName = ($group.Name -as [string])
+    if ([string]::IsNullOrWhiteSpace($mailboxName)) {
+      $mailboxName = '(unknown mailbox)'
+    }
+
+    Write-Host ("[INFO] [{0}] [Mailbox] {1}" -f $StepName, $separator) -ForegroundColor DarkGray
+    Write-Host ("[INFO] [{0}] [Mailbox] Mailbox: {1}" -f $StepName, $mailboxName) -ForegroundColor Gray
+
+    if (Write-ImtFormattedTable -StepName $StepName -Title ("{0} ({1})" -f $Title, $mailboxName) -Rows @($group.Group) -Columns $Columns -MaxRows $MaxRows) {
+      $hasDetails = $true
+    }
+  }
+
+  return $hasDetails
+}
+
 function Write-ImtStepDataTables {
   [CmdletBinding()]
   param(
@@ -228,6 +281,23 @@ function Write-ImtStepDataTables {
         }
       }
 
+      if ($data -and $data.TrackingKeywordMailboxRows) {
+        $mailboxRows = @(
+          foreach ($row in @($data.TrackingKeywordMailboxRows | Sort-Object Mailbox,Keyword)) {
+            [pscustomobject]@{
+              Mailbox = $row.Mailbox
+              Keyword = $row.Keyword
+              TransportEventHitCount = [int]($row.EventHitCount -as [int])
+              TransportDistinctMessageIdHitCount = [int]($row.DistinctMessageIdHitCount -as [int])
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Tracking keyword summary by mailbox' -Rows $mailboxRows -Columns @('Keyword','TransportEventHitCount','TransportDistinctMessageIdHitCount') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+
       if ($data -and $data.DailyCounts) {
         if (Write-ImtFormattedTable -StepName $stepName -Title 'Tracking daily counts' -Rows @($data.DailyCounts) -Columns @('Date','Count') -MaxRows $MaxRows) {
           $hasDetails = $true
@@ -237,7 +307,8 @@ function Write-ImtStepDataTables {
 
     'MailboxExport' {
       if ($data -and $data.ExportRows) {
-        if (Write-ImtFormattedTable -StepName $stepName -Title 'Mailbox export requests' -Rows @($data.ExportRows) -Columns @('Mailbox','Archive','RequestName','Status','FilePath') -MaxRows $MaxRows) {
+        $rows = @($data.ExportRows | Sort-Object Mailbox,Archive,RequestName)
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Mailbox export requests' -Rows $rows -Columns @('Archive','RequestName','Status','FilePath') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
           $hasDetails = $true
         }
       }
@@ -270,11 +341,49 @@ function Write-ImtStepDataTables {
           $hasDetails = $true
         }
       }
+
+      if ($data -and $data.DirectKeywordRows) {
+        $mailboxRows = @(
+          foreach ($row in @($data.DirectKeywordRows | Sort-Object Mailbox,Keyword)) {
+            $status = ($row.Status -as [string])
+            $hitCount = $row.HitCount
+            [pscustomobject]@{
+              Mailbox = $row.Mailbox
+              Keyword = $row.Keyword
+              MailboxEstimatedItemHitCount = if ($status -eq 'OK') { [int]($hitCount -as [int]) } else { $null }
+              Status = $status
+              Error = $row.Error
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Direct mailbox keyword details' -Rows $mailboxRows -Columns @('Keyword','MailboxEstimatedItemHitCount','Status','Error') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
     }
 
     'KeywordCombined' {
       if ($data -and $data.CombinedRows) {
         if (Write-ImtFormattedTable -StepName $stepName -Title 'Combined keyword summary' -Rows @($data.CombinedRows | Sort-Object Keyword) -Columns @('Keyword','TransportEventHitCount','TransportDistinctMessageIdHitCount','MailboxEstimatedItemHitCount') -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+
+      if ($data -and $data.CombinedByMailboxRows) {
+        $mailboxRows = @(
+          foreach ($row in @($data.CombinedByMailboxRows | Sort-Object Mailbox,Keyword)) {
+            [pscustomobject]@{
+              Mailbox = $row.Mailbox
+              Keyword = $row.Keyword
+              TransportEventHitCount = [int]($row.TransportEventHitCount -as [int])
+              TransportDistinctMessageIdHitCount = [int]($row.TransportDistinctMessageIdHitCount -as [int])
+              MailboxEstimatedItemHitCount = [int]($row.MailboxEstimatedItemHitCount -as [int])
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Combined keyword summary by mailbox' -Rows $mailboxRows -Columns @('Keyword','TransportEventHitCount','TransportDistinctMessageIdHitCount','MailboxEstimatedItemHitCount') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
           $hasDetails = $true
         }
       }
@@ -307,6 +416,47 @@ function Write-ImtStepDataTables {
         })
         if (Write-ImtFormattedTable -StepName $stepName -Title 'Retention export artifact' -Rows $rows -Columns @('RetentionCsv') -MaxRows $MaxRows) {
           $hasDetails = $true
+        }
+      }
+    }
+
+    'RunSummary' {
+      if ($data) {
+        $overview = @([pscustomobject]@{
+          TotalSteps = [int]($data.TotalSteps -as [int])
+          OK = [int]($data.Counts.OK -as [int])
+          WARN = [int]($data.Counts.WARN -as [int])
+          FAIL = [int]($data.Counts.FAIL -as [int])
+          SKIP = [int]($data.Counts.SKIP -as [int])
+          DurationSeconds = $data.DurationSeconds
+        })
+
+        if (Write-ImtFormattedTable -StepName $stepName -Title 'Run summary totals' -Rows $overview -Columns @('TotalSteps','OK','WARN','FAIL','SKIP','DurationSeconds') -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+
+        if ($data.StepOutcomes) {
+          if (Write-ImtFormattedTable -StepName $stepName -Title 'Step outcomes' -Rows @($data.StepOutcomes) -Columns @('Step','Status','Summary') -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
+        }
+
+        if ($data.FinalKeywordByMailboxRows) {
+          $mailboxRows = @(
+            foreach ($row in @($data.FinalKeywordByMailboxRows | Sort-Object Mailbox,Keyword)) {
+              [pscustomobject]@{
+                Mailbox = $row.Mailbox
+                Keyword = $row.Keyword
+                TransportEventHitCount = [int]($row.TransportEventHitCount -as [int])
+                TransportDistinctMessageIdHitCount = [int]($row.TransportDistinctMessageIdHitCount -as [int])
+                MailboxEstimatedItemHitCount = [int]($row.MailboxEstimatedItemHitCount -as [int])
+              }
+            }
+          )
+
+          if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Final keyword findings by mailbox' -Rows $mailboxRows -Columns @('Keyword','TransportEventHitCount','TransportDistinctMessageIdHitCount','MailboxEstimatedItemHitCount') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
         }
       }
     }
