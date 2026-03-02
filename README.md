@@ -290,6 +290,12 @@ PRs welcome. Just don’t turn it into a 4,000 line monolith.
 
 ---
 
+## License
+
+This project is licensed under the MIT License. See `LICENSE`.
+
+---
+
 ## Final Notes
 
 This was built for real-world Exchange investigations. It’s not flashy. It’s not SaaS. It’s just structured automation around things admins already do — but in a way thats repeatable and defensible.
