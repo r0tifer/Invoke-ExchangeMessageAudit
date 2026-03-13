@@ -4,8 +4,8 @@ function Export-ImtTrackingReports {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory=$true)]$RunContext,
-    [Parameter(Mandatory=$true)][object[]]$Results,
-    [Parameter(Mandatory=$true)][string[]]$BaseTargetAddresses
+    [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Results,
+    [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses
   )
 
   if ($Results.Count -eq 0) {

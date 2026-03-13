@@ -4,7 +4,7 @@ function Invoke-ImtMessageTrailTrace {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory=$true)]$RunContext,
-    [Parameter(Mandatory=$true)][object[]]$Results,
+    [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Results,
     [Parameter(Mandatory=$true)][string[]]$Servers,
     [Parameter(Mandatory=$true)][hashtable]$VersionInfo
   )

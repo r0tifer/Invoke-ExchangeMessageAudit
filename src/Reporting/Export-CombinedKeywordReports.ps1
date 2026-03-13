@@ -4,7 +4,7 @@ function Export-ImtCombinedKeywordReports {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory=$true)]$RunContext,
-    [Parameter(Mandatory=$true)][string[]]$BaseTargetAddresses,
+    [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses,
     [object[]]$TrackingKeywordRows,
     [object[]]$TrackingKeywordMailboxRows,
     [object[]]$DirectKeywordRows

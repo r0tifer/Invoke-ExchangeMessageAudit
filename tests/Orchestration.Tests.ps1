@@ -112,3 +112,95 @@ Describe 'Invoke-ExchangeMessageAudit export targeting' {
     }
   }
 }
+
+Describe 'Invoke-ExchangeMessageAudit empty tracking path' {
+  BeforeEach {
+    Mock Initialize-ImtLogger {}
+    Mock Complete-ImtLogger {}
+    Mock Write-ImtLog {}
+    Mock Write-ImtStepDataTables {}
+    Mock Test-ImtRunInputs {
+      New-ImtModuleResult -StepName 'ValidateInputs' -Status 'OK' -Summary 'ok' -Data $null -Metrics @{} -Errors @()
+    }
+    Mock Resolve-ImtParticipantsAndSenders {
+      New-ImtModuleResult -StepName 'ResolveIdentities' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        ResolvedParticipants = @()
+        TraceParticipants = @()
+        EffectiveSenderFilters = @()
+        BaseTargetAddresses = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Get-ImtTransportTopology {
+      New-ImtModuleResult -StepName 'DiscoverTransport' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        Servers = @('EXCH-01')
+        VersionInfo = @{ 'EXCH-01' = 'Exchange 2019' }
+        TransportTargets = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtMessageTrackingAudit {
+      New-ImtModuleResult -StepName 'MessageTrackingQuery' -Status 'WARN' -Summary 'no tracking rows' -Data ([pscustomobject]@{
+        Results = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Export-ImtTrackingReports {
+      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses)
+      New-ImtModuleResult -StepName 'TrackingReport' -Status 'WARN' -Summary 'No results to report/export.' -Data ([pscustomobject]@{
+        CsvMain = $null
+        TrackingKeywordRows = @()
+        TrackingKeywordMailboxRows = @()
+        DailyCounts = @()
+      }) -Metrics @{ ResultCount = @($Results).Count } -Errors @()
+    }
+    Mock Invoke-ImtDirectMailboxSearch {
+      New-ImtModuleResult -StepName 'DirectMailboxSearch' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        DirectKeywordRows = @()
+        MatchedSourceMailboxAddresses = @()
+        EvidenceRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Export-ImtMailboxEvidenceReports {
+      New-ImtModuleResult -StepName 'MailboxEvidence' -Status 'SKIP' -Summary 'no evidence' -Data ([pscustomobject]@{
+        EvidenceRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Export-ImtCombinedKeywordReports {
+      New-ImtModuleResult -StepName 'KeywordCombined' -Status 'SKIP' -Summary 'skip' -Data ([pscustomobject]@{
+        CombinedByMailboxRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtMessageTrailTrace {
+      New-ImtModuleResult -StepName 'MessageTrailTrace' -Status 'SKIP' -Summary 'skip' -Data ([pscustomobject]@{}) -Metrics @{} -Errors @()
+    }
+    Mock Write-ImtRunSummary {
+      param($RunContext, $StepResults, $StartedAt, $EndedAt)
+      New-ImtModuleResult -StepName 'RunSummary' -Status 'OK' -Summary 'summary' -Data ([pscustomobject]@{
+        TotalSteps = @($StepResults).Count
+        Counts = [pscustomobject]@{ OK = 1; WARN = 1; FAIL = 0; SKIP = 1 }
+        DurationSeconds = 1
+        StepOutcomes = @()
+        FinalKeywordByMailboxRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+  }
+
+  It 'does not fail when tracking returns zero rows' {
+    $tempDir = Join-Path $env:TEMP ("imt-orch-empty-tracking-{0}" -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+    try {
+      { Invoke-ExchangeMessageAudit `
+          -Recipients 'riveracarolyn929@gmail.com' `
+          -SourceMailboxes 'Rachel Aumavae' `
+          -StartDate '2024-10-01T00:00:00' `
+          -EndDate '2025-09-30T23:59:59' `
+          -HasAttachmentOnly `
+          -OutboundOnly `
+          -SkipRetentionCheck `
+          -DisableTranscriptLog `
+          -OutputDir $tempDir `
+          -OutputLevel INFO } | Should Not Throw
+    } finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
