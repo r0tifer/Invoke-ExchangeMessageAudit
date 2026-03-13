@@ -8,12 +8,18 @@ function New-ImtExportContentFilter {
     [string]$SubjectContains,
     [string[]]$SubjectKeywords,
     [string[]]$SenderFilters,
+    [string[]]$RecipientFilters,
+    [switch]$OutboundOnly,
     [switch]$RequireAttachment
   )
 
   $dtStart = $StartAt.ToString('MM/dd/yyyy HH:mm:ss')
   $dtEnd = $EndAt.ToString('MM/dd/yyyy HH:mm:ss')
-  $dateClause = "((Received -ge '$dtStart' -and Received -le '$dtEnd') -or (Sent -ge '$dtStart' -and Sent -le '$dtEnd'))"
+  $dateClause = if ($OutboundOnly) {
+    "(Sent -ge '$dtStart' -and Sent -le '$dtEnd')"
+  } else {
+    "((Received -ge '$dtStart' -and Received -le '$dtEnd') -or (Sent -ge '$dtStart' -and Sent -le '$dtEnd'))"
+  }
 
   $subjectParts = @()
   if (-not [string]::IsNullOrWhiteSpace($SubjectContains)) {
@@ -52,6 +58,22 @@ function New-ImtExportContentFilter {
 
   if ($senderParts.Count -gt 0) {
     $content = "$content -and ($($senderParts -join ' -or '))"
+  }
+
+  $recipientParts = @()
+  if ($RecipientFilters -and $RecipientFilters.Count -gt 0) {
+    $recipientParts += @(
+      $RecipientFilters |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object {
+          $recipient = $_.Trim().Replace("'", "''")
+          "(To -like '*$recipient*')"
+        }
+    )
+  }
+
+  if ($recipientParts.Count -gt 0) {
+    $content = "$content -and ($($recipientParts -join ' -or '))"
   }
 
   if ($RequireAttachment) {
@@ -111,7 +133,15 @@ function Invoke-ImtMailboxExportRequests {
     } -Errors @($preflight.Issues)
   }
 
-  $contentFilter = New-ImtExportContentFilter -StartAt $RunContext.Start -EndAt $RunContext.End -SubjectContains $RunContext.Inputs.SubjectLike -SubjectKeywords $RunContext.Inputs.Keywords -SenderFilters $EffectiveSenderFilters -RequireAttachment:$RunContext.Inputs.HasAttachmentOnly
+  $contentFilter = New-ImtExportContentFilter `
+    -StartAt $RunContext.Start `
+    -EndAt $RunContext.End `
+    -SubjectContains $RunContext.Inputs.SubjectLike `
+    -SubjectKeywords $RunContext.Inputs.Keywords `
+    -SenderFilters $EffectiveSenderFilters `
+    -RecipientFilters $RunContext.Inputs.Recipients `
+    -OutboundOnly:$RunContext.Inputs.OutboundOnly `
+    -RequireAttachment:$RunContext.Inputs.HasAttachmentOnly
 
   Write-ImtLog -Level DEBUG -Step 'MailboxExport' -EventType Progress -Message ("ContentFilter: {0}" -f $contentFilter)
   $exportRows = New-Object System.Collections.Generic.List[object]

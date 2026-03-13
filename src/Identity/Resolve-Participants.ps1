@@ -116,11 +116,25 @@ function Get-ImtTargetAddressSet {
   }
 
   if ($RunContext.RecipientMode) {
-    $value = ($RunContext.Inputs.Recipient -as [string])
-    if ($value) {
-      $normalized = $value.ToLowerInvariant()
-      if (-not $set.Contains($normalized)) {
-        [void]$set.Add($normalized)
+    foreach ($recipientInput in @($RunContext.Inputs.Recipients)) {
+      $value = ($recipientInput -as [string])
+      if ($value) {
+        $normalized = $value.ToLowerInvariant()
+        if (-not $set.Contains($normalized)) {
+          [void]$set.Add($normalized)
+        }
+      }
+    }
+  }
+
+  if ($RunContext.Inputs.SourceMailboxes -and $RunContext.Inputs.SourceMailboxes.Count -gt 0) {
+    foreach ($sourceMailbox in @($RunContext.Inputs.SourceMailboxes)) {
+      $value = ($sourceMailbox -as [string])
+      if ($value) {
+        $normalized = $value.ToLowerInvariant()
+        if (-not $set.Contains($normalized)) {
+          [void]$set.Add($normalized)
+        }
       }
     }
   }

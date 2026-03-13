@@ -113,8 +113,10 @@ Logs still capture everything regardless.
 | --- | --- | --- |
 | `-Participants` | `string[]` | Mailboxes/users to trace as senders or recipients. |
 | `-Recipient` | `string` | Target recipient address for recipient-focused tracking. |
+| `-Recipients` | `string[]` | Multiple target recipient addresses for recipient-focused tracking and mailbox audit searches. |
 | `-SenderAddress` (`-Sender`) | `string` | Single sender filter. |
 | `-Senders` (`-SenderList`) | `string[]` | Multiple sender filters. |
+| `-SourceMailboxes` | `string[]` | Explicit mailbox scope for mailbox searches/exports when the sender mailbox list is known. |
 | `-DaysBack` | `int` | Relative lookback window when explicit dates are not provided. Default: `90`. |
 | `-StartDate` | `datetime` | Start of date range (must be used with `-EndDate`). |
 | `-EndDate` | `datetime` | End of date range (must be used with `-StartDate`). |
@@ -133,7 +135,11 @@ Logs still capture everything regardless.
 | `-IncludeArchive` | `switch` | Include archive mailbox export requests in addition to primary mailbox. |
 | `-SkipDagPathValidation` | `switch` | Skip mailbox-server remote path validation during export preflight. |
 | `-PreflightOnly` | `switch` | Run identity/transport/preflight checks only and skip tracking/export/search steps. |
+| `-SearchAllMailboxes` | `switch` | Search all local user/shared mailboxes for mailbox-audit workflows. |
 | `-SearchMailboxesDirectly` | `switch` | Force direct mailbox estimate search step even without keywords. |
+| `-OutboundOnly` | `switch` | Restrict mailbox search/export logic to sent-item time windows only. |
+| `-DetailedMailboxEvidence` | `switch` | Copy matching items to an evidence mailbox and produce a consolidated message-level evidence CSV. |
+| `-EvidenceMailbox` | `string` | Target mailbox used to hold copied evidence items for `-DetailedMailboxEvidence`. |
 | `-DisableTranscriptLog` | `switch` | Disable transcript logging (step logging behavior remains as implemented by logger settings). |
 | `-SearchDumpsterDirectly` | `switch` | Include dumpster when running direct mailbox estimate queries. |
 | `-ExpandExportScopeFromMatchedTraffic` | `switch` | Add matched sender/recipient traffic addresses to mailbox export target scope. |
@@ -241,6 +247,22 @@ Invoke-ExchangeMessageAudit `
   -HasAttachmentOnly `
   -ExportLocatedEmails `
   -ExportPstRoot "\\fileserver01\PSTExports" `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+Org-wide outbound attachment audit with detailed mailbox evidence:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Recipients "Riveracarolyn929@gmail.com","laserino77@gmail.com","manaluuraq@live.com","libertyfrances1@icloud.com" `
+  -SourceMailboxes "Rachel Aumavae","Joshua Stein" `
+  -StartDate "2024-10-01 00:00:00" `
+  -EndDate "2025-09-30 23:59:59" `
+  -HasAttachmentOnly `
+  -OutboundOnly `
+  -DetailedMailboxEvidence `
+  -EvidenceMailbox "Discovery Search Mailbox" `
   -OutputDir "C:\Temp\ExchangeAudit" `
   -OutputLevel INFO
 ```

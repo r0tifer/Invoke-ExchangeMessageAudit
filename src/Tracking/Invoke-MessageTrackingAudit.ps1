@@ -12,6 +12,19 @@ function Invoke-ImtMessageTrackingAudit {
 
   $results = New-Object System.Collections.Generic.List[object]
   $serverFailures = 0
+  $rawRecipientInputs = @()
+  if ($RunContext.Inputs -and ($RunContext.Inputs.PSObject.Properties.Name -contains 'Recipients')) {
+    $rawRecipientInputs = @($RunContext.Inputs.Recipients)
+  } elseif ($RunContext.Inputs -and ($RunContext.Inputs.PSObject.Properties.Name -contains 'Recipient') -and $RunContext.Inputs.Recipient) {
+    $rawRecipientInputs = @($RunContext.Inputs.Recipient)
+  }
+  $recipientFilters = @(
+    $rawRecipientInputs |
+      ForEach-Object { $_ -as [string] } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      ForEach-Object { $_.Trim().ToLowerInvariant() } |
+      Select-Object -Unique
+  )
 
   foreach ($server in $Servers) {
     $version = $VersionInfo[$server]
@@ -35,14 +48,19 @@ function Invoke-ImtMessageTrackingAudit {
       } elseif ($RunContext.RecipientMode -and $EffectiveSenderFilters.Count -gt 0) {
         $comboHits = @(
           foreach ($sender in $EffectiveSenderFilters) {
-            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender -Recipients $RunContext.Inputs.Recipient
+            foreach ($recipient in $recipientFilters) {
+              Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Sender $sender -Recipients $recipient
+            }
           }
         )
         $chunk = @($comboHits)
       } elseif ($RunContext.RecipientMode) {
-        $chunk = @(
-          Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $RunContext.Inputs.Recipient
+        $recipientHits = @(
+          foreach ($recipient in $recipientFilters) {
+            Get-MessageTrackingLog -Server $server -Start $RunContext.Start -End $RunContext.End -ResultSize Unlimited -Recipients $recipient
+          }
         )
+        $chunk = @($recipientHits)
       } elseif ($EffectiveSenderFilters.Count -gt 0) {
         $fromSenderHits = @(
           foreach ($sender in $EffectiveSenderFilters) {
@@ -97,6 +115,25 @@ function Invoke-ImtMessageTrackingAudit {
             }
 
             $senderMatch -or $recipientMatch
+          }
+        }
+
+        if ($recipientFilters.Count -gt 0) {
+          $chunk = $chunk | Where-Object {
+            if (-not $_.Recipients) {
+              return $false
+            }
+
+            @(
+              $_.Recipients |
+                ForEach-Object {
+                  $recipientValue = ($_ -as [string])
+                  if ($recipientValue) {
+                    $recipientValue.ToLowerInvariant()
+                  }
+                } |
+                Where-Object { $_ -and ($recipientFilters -contains $_) }
+            ).Count -gt 0
           }
         }
 

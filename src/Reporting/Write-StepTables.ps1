@@ -315,6 +315,32 @@ function Write-ImtStepDataTables {
     }
 
     'DirectMailboxSearch' {
+      if ($data -and $data.ScopeRows) {
+        $scopeRows = @($data.ScopeRows | Sort-Object ScopeMode,Mailbox,Included -Descending)
+        if (Write-ImtFormattedTable -StepName $stepName -Title 'Mailbox search scope' -Rows $scopeRows -Columns @('ScopeMode','Mailbox','RecipientTypeDetails','Included','Reason') -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+
+      if ($data -and $data.DirectRows) {
+        $rows = @(
+          foreach ($row in @($data.DirectRows | Sort-Object Mailbox)) {
+            [pscustomobject]@{
+              Mailbox = $row.Mailbox
+              ResultItemsCount = $row.ResultItemsCount
+              DateRangeItemsCount = $row.DateRangeItemsCount
+              ResultItemsSize = $row.ResultItemsSize
+              Status = $row.Status
+              Error = $row.Error
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Direct mailbox search summary' -Rows $rows -Columns @('ResultItemsCount','DateRangeItemsCount','ResultItemsSize','Status','Error') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+
       if ($data -and $data.DirectKeywordRows) {
         $keywordTotals = @{}
         foreach ($row in @($data.DirectKeywordRows | Where-Object { $_.Status -eq 'OK' })) {
@@ -358,6 +384,33 @@ function Write-ImtStepDataTables {
         )
 
         if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Direct mailbox keyword details' -Rows $mailboxRows -Columns @('Keyword','MailboxEstimatedItemHitCount','Status','Error') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+    }
+
+    'MailboxEvidence' {
+      if ($data -and $data.SummaryRows) {
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Mailbox evidence summary' -Rows @($data.SummaryRows) -Columns @('EvidenceRowCount','TransportCorrelatedCount') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+
+      if ($data -and $data.EvidenceRows) {
+        $rows = @(
+          foreach ($row in @($data.EvidenceRows | Sort-Object SourceMailbox,SentTime)) {
+            [pscustomobject]@{
+              Mailbox = $row.SourceMailbox
+              SentTime = $row.SentTime
+              Subject = $row.Subject
+              To = $row.To
+              AttachmentCount = $row.AttachmentCount
+              TransportCorrelated = $row.TransportCorrelated
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Mailbox evidence details' -Rows $rows -Columns @('SentTime','Subject','To','AttachmentCount','TransportCorrelated') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
           $hasDetails = $true
         }
       }

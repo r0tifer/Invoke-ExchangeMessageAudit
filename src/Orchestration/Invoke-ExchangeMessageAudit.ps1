@@ -12,8 +12,9 @@ Modular Exchange mail trace orchestrator.
 Core Parameters
 ---------------
 -Participants <string[]>
--Recipient <string>
+-Recipient / -Recipients <string|string[]>
 -Sender / -Senders <string|string[]>
+-SourceMailboxes <string[]>
 -StartDate <datetime> -EndDate <datetime>
 -Keywords <string[]>
 -OutputDir <path>
@@ -27,6 +28,10 @@ Export Parameters
 -ExportPstRoot <UNC path>
 -IncludeArchive
 -PreflightOnly
+-SearchAllMailboxes
+-OutboundOnly
+-DetailedMailboxEvidence
+-EvidenceMailbox <string>
 
 Examples
 --------
@@ -42,9 +47,11 @@ function Invoke-ExchangeMessageAudit {
   [CmdletBinding()]
   param(
     [string]$Recipient,
+    [string[]]$Recipients,
     [Alias('Sender')][string]$SenderAddress,
     [Alias('SenderList')][string[]]$Senders,
     [string[]]$Participants,
+    [string[]]$SourceMailboxes,
     [int]$DaysBack = 90,
     [datetime]$StartDate,
     [datetime]$EndDate,
@@ -63,7 +70,11 @@ function Invoke-ExchangeMessageAudit {
     [switch]$IncludeArchive,
     [switch]$SkipDagPathValidation,
     [switch]$PreflightOnly,
+    [switch]$SearchAllMailboxes,
     [switch]$SearchMailboxesDirectly,
+    [switch]$OutboundOnly,
+    [switch]$DetailedMailboxEvidence,
+    [string]$EvidenceMailbox,
     [switch]$DisableTranscriptLog,
     [switch]$SearchDumpsterDirectly,
     [switch]$ExpandExportScopeFromMatchedTraffic,
@@ -77,9 +88,11 @@ function Invoke-ExchangeMessageAudit {
 
   $runContext = Initialize-ImtRunContext `
     -Recipient $Recipient `
+    -Recipients $Recipients `
     -SenderAddress $SenderAddress `
     -Senders $Senders `
     -Participants $Participants `
+    -SourceMailboxes $SourceMailboxes `
     -DaysBack $DaysBack `
     -StartDate $StartDate `
     -EndDate $EndDate `
@@ -98,7 +111,11 @@ function Invoke-ExchangeMessageAudit {
     -IncludeArchive:$IncludeArchive `
     -SkipDagPathValidation:$SkipDagPathValidation `
     -PreflightOnly:$PreflightOnly `
+    -SearchAllMailboxes:$SearchAllMailboxes `
     -SearchMailboxesDirectly:$SearchMailboxesDirectly `
+    -OutboundOnly:$OutboundOnly `
+    -DetailedMailboxEvidence:$DetailedMailboxEvidence `
+    -EvidenceMailbox $EvidenceMailbox `
     -DisableTranscriptLog:$DisableTranscriptLog `
     -SearchDumpsterDirectly:$SearchDumpsterDirectly `
     -ExpandExportScopeFromMatchedTraffic:$ExpandExportScopeFromMatchedTraffic `
@@ -115,6 +132,7 @@ function Invoke-ExchangeMessageAudit {
   $trackingData = $null
   $trackingReportData = $null
   $directSearchData = $null
+  $mailboxEvidenceData = $null
   $runSummaryResult = $null
 
   function Invoke-ImtStep {
@@ -195,6 +213,7 @@ function Invoke-ExchangeMessageAudit {
       Add-ImtSkippedStep -StepName 'TrackingReport' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'MailboxExport' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'DirectMailboxSearch' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
+      Add-ImtSkippedStep -StepName 'MailboxEvidence' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'KeywordCombined' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'MessageTrailTrace' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'RetentionExport' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
@@ -218,6 +237,36 @@ function Invoke-ExchangeMessageAudit {
       }
       $trackingReportData = $trackingReportResult.Data
 
+      if ($runContext.DoDirectMailboxSearch) {
+        $directSearchResult = Invoke-ImtStep -StepName 'DirectMailboxSearch' -Action {
+          Invoke-ImtDirectMailboxSearch -RunContext $runContext -BaseTargetAddresses $identityData.BaseTargetAddresses -EffectiveSenderFilters $identityData.EffectiveSenderFilters
+        }
+        $directSearchData = $directSearchResult.Data
+
+        if ($runContext.Inputs.DetailedMailboxEvidence -or ($directSearchData -and $directSearchData.EvidenceRows -and @($directSearchData.EvidenceRows).Count -gt 0)) {
+          $mailboxEvidenceResult = Invoke-ImtStep -StepName 'MailboxEvidence' -Action {
+            Export-ImtMailboxEvidenceReports -RunContext $runContext -EvidenceRows $directSearchData.EvidenceRows -TrackingResults $trackingData.Results
+          }
+          $mailboxEvidenceData = $mailboxEvidenceResult.Data
+        } else {
+          Add-ImtSkippedStep -StepName 'MailboxEvidence' -Summary 'Mailbox evidence reporting not requested for this run.' | Out-Null
+          $mailboxEvidenceData = [pscustomobject]@{
+            EvidenceRows = @()
+          }
+        }
+      } else {
+        Add-ImtSkippedStep -StepName 'DirectMailboxSearch' -Summary 'Direct mailbox search not requested for this run.' | Out-Null
+        $directSearchData = [pscustomobject]@{
+          DirectKeywordRows = @()
+          MatchedSourceMailboxAddresses = @()
+          EvidenceRows = @()
+        }
+        Add-ImtSkippedStep -StepName 'MailboxEvidence' -Summary 'Mailbox evidence reporting skipped because direct mailbox search did not run.' | Out-Null
+        $mailboxEvidenceData = [pscustomobject]@{
+          EvidenceRows = @()
+        }
+      }
+
       $runExport = $false
       if ($runContext.Inputs.ExportLocatedEmails) {
         $runExport = $true
@@ -229,25 +278,22 @@ function Invoke-ExchangeMessageAudit {
       }
 
       if ($runExport) {
-        $exportAddresses = Get-ImtTargetAddressSet -RunContext $runContext -ResolvedParticipants $identityData.ResolvedParticipants -TraceParticipants $identityData.TraceParticipants -EffectiveSenderFilters $identityData.EffectiveSenderFilters -UseResolvedParticipants -IncludeMatchedTraffic:$runContext.Inputs.ExpandExportScopeFromMatchedTraffic -MatchedResults $trackingData.Results
+        $exportAddresses = @()
+        if ($directSearchData -and $directSearchData.MatchedSourceMailboxAddresses -and @($directSearchData.MatchedSourceMailboxAddresses).Count -gt 0) {
+          $exportAddresses = @($directSearchData.MatchedSourceMailboxAddresses)
+        } else {
+          $exportAddresses = Get-ImtTargetAddressSet -RunContext $runContext -ResolvedParticipants $identityData.ResolvedParticipants -TraceParticipants $identityData.TraceParticipants -EffectiveSenderFilters $identityData.EffectiveSenderFilters -UseResolvedParticipants -IncludeMatchedTraffic:$runContext.Inputs.ExpandExportScopeFromMatchedTraffic -MatchedResults $trackingData.Results
+        }
 
-        Invoke-ImtStep -StepName 'MailboxExport' -Action {
-          Invoke-ImtMailboxExportRequests -RunContext $runContext -TargetAddresses $exportAddresses -EffectiveSenderFilters $identityData.EffectiveSenderFilters
-        } | Out-Null
+        if (@($exportAddresses).Count -gt 0) {
+          Invoke-ImtStep -StepName 'MailboxExport' -Action {
+            Invoke-ImtMailboxExportRequests -RunContext $runContext -TargetAddresses $exportAddresses -EffectiveSenderFilters $identityData.EffectiveSenderFilters
+          } | Out-Null
+        } else {
+          Add-ImtSkippedStep -StepName 'MailboxExport' -Summary 'Mailbox export skipped because no matching source mailboxes were identified.' | Out-Null
+        }
       } else {
         Add-ImtSkippedStep -StepName 'MailboxExport' -Summary 'Mailbox export was not requested.' | Out-Null
-      }
-
-      if ($runContext.DoDirectMailboxSearch) {
-        $directSearchResult = Invoke-ImtStep -StepName 'DirectMailboxSearch' -Action {
-          Invoke-ImtDirectMailboxSearch -RunContext $runContext -BaseTargetAddresses $identityData.BaseTargetAddresses -EffectiveSenderFilters $identityData.EffectiveSenderFilters
-        }
-        $directSearchData = $directSearchResult.Data
-      } else {
-        Add-ImtSkippedStep -StepName 'DirectMailboxSearch' -Summary 'Direct mailbox search not requested for this run.' | Out-Null
-        $directSearchData = [pscustomobject]@{
-          DirectKeywordRows = @()
-        }
       }
 
       Invoke-ImtStep -StepName 'KeywordCombined' -Action {

@@ -13,6 +13,7 @@ $sourceFiles = @(
   'src\Export\Test-ExportPrerequisites.ps1'
   'src\Export\Invoke-MailboxExportRequests.ps1'
   'src\MailboxSearch\Invoke-DirectMailboxSearch.ps1'
+  'src\Reporting\Export-MailboxEvidenceReports.ps1'
   'src\Reporting\Export-CombinedKeywordReports.ps1'
   'src\Reporting\Write-StepTables.ps1'
   'src\Tracking\Invoke-MessageTrailTrace.ps1'

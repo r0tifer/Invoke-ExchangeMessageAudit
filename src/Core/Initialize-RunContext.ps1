@@ -4,9 +4,11 @@ function Initialize-ImtRunContext {
   [CmdletBinding()]
   param(
     [string]$Recipient,
+    [string[]]$Recipients,
     [string]$SenderAddress,
     [string[]]$Senders,
     [string[]]$Participants,
+    [string[]]$SourceMailboxes,
     [int]$DaysBack,
     [datetime]$StartDate,
     [datetime]$EndDate,
@@ -25,7 +27,11 @@ function Initialize-ImtRunContext {
     [switch]$IncludeArchive,
     [switch]$SkipDagPathValidation,
     [switch]$PreflightOnly,
+    [switch]$SearchAllMailboxes,
     [switch]$SearchMailboxesDirectly,
+    [switch]$OutboundOnly,
+    [switch]$DetailedMailboxEvidence,
+    [string]$EvidenceMailbox,
     [switch]$DisableTranscriptLog,
     [switch]$SearchDumpsterDirectly,
     [switch]$ExpandExportScopeFromMatchedTraffic,
@@ -40,10 +46,34 @@ function Initialize-ImtRunContext {
     New-Item -ItemType Directory -Path $effectiveLogDir | Out-Null
   }
 
+  $normalizedRecipients = @()
+  if (-not [string]::IsNullOrWhiteSpace($Recipient)) {
+    $normalizedRecipients += $Recipient.Trim()
+  }
+  if ($Recipients -and $Recipients.Count -gt 0) {
+    $normalizedRecipients += @(
+      $Recipients |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Trim() }
+    )
+  }
+  $normalizedRecipients = @($normalizedRecipients | Select-Object -Unique)
+
+  $normalizedSourceMailboxes = @()
+  if ($SourceMailboxes -and $SourceMailboxes.Count -gt 0) {
+    $normalizedSourceMailboxes = @(
+      $SourceMailboxes |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Trim() } |
+        Select-Object -Unique
+    )
+  }
+
   $hasSenderInput = (-not [string]::IsNullOrWhiteSpace($SenderAddress)) -or ($Senders -and $Senders.Count -gt 0)
-  $recipientMode = -not [string]::IsNullOrWhiteSpace($Recipient)
+  $recipientMode = $normalizedRecipients.Count -gt 0
   $pairMode = $recipientMode -and $hasSenderInput
   $participantMode = $Participants -and $Participants.Count -gt 0
+  $hasMailboxScopeInput = [bool]$SearchAllMailboxes -or ($normalizedSourceMailboxes.Count -gt 0)
 
   $hasExplicitDateRange = $StartDate -or $EndDate
   if ($StartDate -and $EndDate) {
@@ -55,7 +85,7 @@ function Initialize-ImtRunContext {
   }
 
   $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
-  $safeRecipient = if ($Recipient) { ($Recipient -replace '[^\w@.-]','_') } else { 'any-recipient' }
+  $safeRecipient = if ($normalizedRecipients.Count -gt 0) { (($normalizedRecipients -join '_') -replace '[^\w@.-]','_') } else { 'any-recipient' }
 
   $rawSenderList = @()
   if (-not [string]::IsNullOrWhiteSpace($SenderAddress)) {
@@ -88,10 +118,13 @@ function Initialize-ImtRunContext {
     RecipientMode = $recipientMode
     PairMode = $pairMode
     ParticipantMode = $participantMode
-    DoDirectMailboxSearch = ($SearchMailboxesDirectly -or ($Keywords -and $Keywords.Count -gt 0) -or $HasAttachmentOnly)
+    HasMailboxScopeInput = $hasMailboxScopeInput
+    DoDirectMailboxSearch = ($SearchMailboxesDirectly -or ($Keywords -and $Keywords.Count -gt 0) -or $HasAttachmentOnly -or $SearchAllMailboxes -or ($normalizedSourceMailboxes.Count -gt 0) -or $DetailedMailboxEvidence)
     Inputs = [pscustomobject]@{
-      Recipient = $Recipient
+      Recipient = if ($normalizedRecipients.Count -gt 0) { $normalizedRecipients[0] } else { $null }
+      Recipients = @($normalizedRecipients)
       Participants = @($Participants)
+      SourceMailboxes = @($normalizedSourceMailboxes)
       DaysBack = $DaysBack
       StartDate = $StartDate
       EndDate = $EndDate
@@ -109,7 +142,11 @@ function Initialize-ImtRunContext {
       IncludeArchive = [bool]$IncludeArchive
       SkipDagPathValidation = [bool]$SkipDagPathValidation
       PreflightOnly = [bool]$PreflightOnly
+      SearchAllMailboxes = [bool]$SearchAllMailboxes
       SearchMailboxesDirectly = [bool]$SearchMailboxesDirectly
+      OutboundOnly = [bool]$OutboundOnly
+      DetailedMailboxEvidence = [bool]$DetailedMailboxEvidence
+      EvidenceMailbox = $EvidenceMailbox
       DisableTranscriptLog = [bool]$DisableTranscriptLog
       SearchDumpsterDirectly = [bool]$SearchDumpsterDirectly
       ExpandExportScopeFromMatchedTraffic = [bool]$ExpandExportScopeFromMatchedTraffic

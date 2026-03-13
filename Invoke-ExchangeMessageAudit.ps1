@@ -6,9 +6,11 @@
 [CmdletBinding()]
 param(
   [string]$Recipient,
+  [string[]]$Recipients,
   [Alias('Sender')][string]$SenderAddress,
   [Alias('SenderList')][string[]]$Senders,
   [string[]]$Participants,
+  [string[]]$SourceMailboxes,
   [int]$DaysBack = 90,
   [datetime]$StartDate,
   [datetime]$EndDate,
@@ -27,7 +29,11 @@ param(
   [switch]$IncludeArchive,
   [switch]$SkipDagPathValidation,
   [switch]$PreflightOnly,
+  [switch]$SearchAllMailboxes,
   [switch]$SearchMailboxesDirectly,
+  [switch]$OutboundOnly,
+  [switch]$DetailedMailboxEvidence,
+  [string]$EvidenceMailbox,
   [switch]$DisableTranscriptLog,
   [switch]$SearchDumpsterDirectly,
   [switch]$ExpandExportScopeFromMatchedTraffic,

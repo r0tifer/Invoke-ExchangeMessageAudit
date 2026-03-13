@@ -36,6 +36,24 @@ Describe 'Test-ImtRunInputs' {
     $result = Test-ImtRunInputs -RunContext $ctx
     $result.Status | Should Be 'OK'
   }
+
+  It 'normalizes Recipient and Recipients into one recipient list' {
+    $ctx = Initialize-ImtRunContext -Recipient 'one@example.org' -Recipients @('two@example.org', 'one@example.org') -DaysBack 7 -OutputDir $env:TEMP -OutputLevel INFO
+    @($ctx.Inputs.Recipients).Count | Should Be 2
+    $ctx.Inputs.Recipient | Should Be 'one@example.org'
+    @($ctx.Inputs.Recipients) -contains 'one@example.org' | Should Be $true
+    @($ctx.Inputs.Recipients) -contains 'two@example.org' | Should Be $true
+  }
+
+  It 'throws when detailed mailbox evidence is requested without EvidenceMailbox' {
+    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $env:TEMP -DetailedMailboxEvidence -OutputLevel INFO
+    { Test-ImtRunInputs -RunContext $ctx } | Should Throw
+  }
+
+  It 'throws when SearchAllMailboxes and SourceMailboxes are combined' {
+    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $env:TEMP -SearchAllMailboxes -SourceMailboxes 'user@example.org' -OutputLevel INFO
+    { Test-ImtRunInputs -RunContext $ctx } | Should Throw
+  }
 }
 
 Describe 'Initialize-ImtRunContext logging paths' {
