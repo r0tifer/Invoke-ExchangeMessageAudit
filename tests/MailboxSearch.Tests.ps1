@@ -7,6 +7,7 @@ $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 . (Join-Path $repoRoot 'src\MailboxSearch\Invoke-DirectMailboxSearch.ps1')
 
 function Get-Mailbox { }
+function Get-Recipient { }
 function Search-Mailbox { }
 
 Describe 'New-ImtMailboxSearchQuery' {
@@ -65,6 +66,69 @@ Describe 'Resolve-ImtMailboxAuditScope' {
     @($result.Mailboxes).Count | Should Be 2
     @($result.ScopeRows | Where-Object { $_.Included }).Count | Should Be 2
     @($result.ScopeRows | Where-Object { -not $_.Included }).Count | Should Be 1
+  }
+
+  It 'resolves explicit source mailboxes from display names' {
+    $runContext = [pscustomobject]@{
+      Inputs = [pscustomobject]@{
+        SearchAllMailboxes = $false
+        SourceMailboxes = @('Rachel Aumavae', 'Joshua Stein')
+      }
+    }
+
+    Mock Get-Recipient {
+      param(
+        [string]$Identity,
+        [string]$Anr,
+        [string]$Filter,
+        [int]$ResultSize
+      )
+
+      if ($Identity -eq 'Rachel Aumavae') {
+        return [pscustomobject]@{
+          PrimarySmtpAddress = 'rachel.aumavae@example.org'
+          DisplayName = 'Rachel Aumavae'
+        }
+      }
+
+      if ($Identity -eq 'Joshua Stein') {
+        return [pscustomobject]@{
+          PrimarySmtpAddress = 'joshua.stein@example.org'
+          DisplayName = 'Joshua Stein'
+        }
+      }
+    }
+
+    Mock Get-Mailbox {
+      param([string]$Identity)
+
+      switch ($Identity) {
+        'Rachel Aumavae' { throw 'not found by display name' }
+        'Joshua Stein' { throw 'not found by display name' }
+        'rachel.aumavae@example.org' {
+          return [pscustomobject]@{
+            Identity = 'rachel01'
+            DistinguishedName = 'dn-rachel01'
+            PrimarySmtpAddress = 'rachel.aumavae@example.org'
+            RecipientTypeDetails = 'UserMailbox'
+          }
+        }
+        'joshua.stein@example.org' {
+          return [pscustomobject]@{
+            Identity = 'joshua01'
+            DistinguishedName = 'dn-joshua01'
+            PrimarySmtpAddress = 'joshua.stein@example.org'
+            RecipientTypeDetails = 'UserMailbox'
+          }
+        }
+      }
+    }
+
+    $result = Resolve-ImtMailboxAuditScope -RunContext $runContext -BaseTargetAddresses @()
+
+    @($result.Mailboxes).Count | Should Be 2
+    @($result.ScopeRows | Where-Object { $_.Included }).Count | Should Be 2
+    @($result.Unresolved).Count | Should Be 0
   }
 }
 

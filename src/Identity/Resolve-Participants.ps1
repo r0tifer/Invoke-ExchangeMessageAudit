@@ -72,8 +72,25 @@ function Resolve-ImtMailboxByAddress {
   try {
     return Get-Mailbox -Identity $Address -ErrorAction Stop
   } catch {
-    return $null
+    # Try resolving display name / ANR to SMTP, then re-query mailbox.
   }
+
+  $resolvedAddress = $null
+  try {
+    $resolvedAddress = Resolve-ImtParticipantSmtp -Identity $Address
+  } catch {
+    $resolvedAddress = $null
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($resolvedAddress) -and $resolvedAddress.ToLowerInvariant() -ne $Address.ToLowerInvariant()) {
+    try {
+      return Get-Mailbox -Identity $resolvedAddress -ErrorAction Stop
+    } catch {
+      return $null
+    }
+  }
+
+  return $null
 }
 
 function Get-ImtTargetAddressSet {

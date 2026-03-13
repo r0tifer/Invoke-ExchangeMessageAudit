@@ -208,8 +208,8 @@ function Resolve-ImtMailboxAuditScope {
 
   if ($RunContext.Inputs.SourceMailboxes -and $RunContext.Inputs.SourceMailboxes.Count -gt 0) {
     foreach ($identity in @($RunContext.Inputs.SourceMailboxes)) {
-      try {
-        $mailbox = Get-Mailbox -Identity $identity -ErrorAction Stop
+      $mailbox = Resolve-ImtMailboxByAddress -Address $identity
+      if ($mailbox) {
         [void]$mailboxes.Add($mailbox)
         [void]$scopeRows.Add([pscustomobject]@{
           ScopeMode = 'Explicit'
@@ -218,10 +218,20 @@ function Resolve-ImtMailboxAuditScope {
           Included = $true
           Reason = 'Explicit source mailbox'
         })
-      } catch {
+      } else {
+        $failureReason = 'Mailbox could not be resolved from explicit identity.'
+        try {
+          $recipient = Get-Recipient -Identity $identity -ErrorAction SilentlyContinue
+          if ($recipient -and $recipient.PrimarySmtpAddress) {
+            $failureReason = ("Resolved recipient '{0}' but it is not a local searchable mailbox in this org/session." -f $recipient.PrimarySmtpAddress)
+          }
+        } catch {
+          # ignore and keep default reason
+        }
+
         [void]$unresolved.Add([pscustomobject]@{
           Address = $identity
-          Reason = $_.Exception.Message
+          Reason = $failureReason
           RecipientType = 'Unresolved'
         })
       }
