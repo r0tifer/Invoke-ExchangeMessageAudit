@@ -17,15 +17,39 @@ function Test-ImtIsValidSmtpAddress {
 function Resolve-ImtParticipantSmtp {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory=$true)][string]$Identity
+    [Parameter(Mandatory=$true)]$Identity
   )
 
-  if ($Identity -match '@') {
-    return $Identity.ToLowerInvariant()
+  $normalizedIdentity = $null
+  if ($Identity -is [System.Array]) {
+    $firstIdentity = @(
+      $Identity |
+        ForEach-Object { $_ -as [string] } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -First 1
+    )
+
+    if ($firstIdentity.Count -gt 0) {
+      $normalizedIdentity = $firstIdentity[0].Trim()
+    }
+  } else {
+    $normalizedIdentity = ($Identity -as [string])
+    if (-not [string]::IsNullOrWhiteSpace($normalizedIdentity)) {
+      $normalizedIdentity = $normalizedIdentity.Trim()
+    }
+  }
+
+  if ([string]::IsNullOrWhiteSpace($normalizedIdentity)) {
+    Write-ImtLog -Level WARN -Step 'ResolveIdentities' -EventType Progress -Message 'Unable to resolve blank participant identity to SMTP address.'
+    return $null
+  }
+
+  if ($normalizedIdentity -match '@') {
+    return $normalizedIdentity.ToLowerInvariant()
   }
 
   try {
-    $recipient = Get-Recipient -Identity $Identity -ErrorAction Stop
+    $recipient = Get-Recipient -Identity $normalizedIdentity -ErrorAction Stop
     if ($recipient.PrimarySmtpAddress) {
       return $recipient.PrimarySmtpAddress.ToString().ToLowerInvariant()
     }
@@ -34,7 +58,7 @@ function Resolve-ImtParticipantSmtp {
   }
 
   try {
-    $escaped = $Identity.Replace("'", "''")
+    $escaped = $normalizedIdentity.Replace("'", "''")
     $recipientMatches = @(Get-Recipient -ResultSize Unlimited -Filter "DisplayName -eq '$escaped'" -ErrorAction Stop)
     if ($recipientMatches.Count -gt 0 -and $recipientMatches[0].PrimarySmtpAddress) {
       return $recipientMatches[0].PrimarySmtpAddress.ToString().ToLowerInvariant()
@@ -44,13 +68,13 @@ function Resolve-ImtParticipantSmtp {
   }
 
   try {
-    $anrMatches = @(Get-Recipient -Anr $Identity -ResultSize 10 -ErrorAction Stop)
+    $anrMatches = @(Get-Recipient -Anr $normalizedIdentity -ResultSize 10 -ErrorAction Stop)
     if ($anrMatches.Count -gt 0) {
-      $exactDisplay = @($anrMatches | Where-Object { ($_.DisplayName -as [string]) -eq $Identity })
+      $exactDisplay = @($anrMatches | Where-Object { ($_.DisplayName -as [string]) -eq $normalizedIdentity })
       $picked = if ($exactDisplay.Count -gt 0) { $exactDisplay[0] } else { $anrMatches[0] }
       if ($picked.PrimarySmtpAddress) {
         if ($anrMatches.Count -gt 1) {
-          Write-ImtLog -Level WARN -Step 'ResolveIdentities' -EventType Progress -Message ("Participant '{0}' matched multiple recipients via ANR. Using '{1} <{2}>'." -f $Identity, $picked.DisplayName, $picked.PrimarySmtpAddress)
+          Write-ImtLog -Level WARN -Step 'ResolveIdentities' -EventType Progress -Message ("Participant '{0}' matched multiple recipients via ANR. Using '{1} <{2}>'." -f $normalizedIdentity, $picked.DisplayName, $picked.PrimarySmtpAddress)
         }
         return $picked.PrimarySmtpAddress.ToString().ToLowerInvariant()
       }
@@ -59,8 +83,8 @@ function Resolve-ImtParticipantSmtp {
     # final fallback below
   }
 
-  Write-ImtLog -Level WARN -Step 'ResolveIdentities' -EventType Progress -Message ("Unable to resolve participant '{0}' to SMTP address. Using input as-is." -f $Identity)
-  return $Identity.ToLowerInvariant()
+  Write-ImtLog -Level WARN -Step 'ResolveIdentities' -EventType Progress -Message ("Unable to resolve participant '{0}' to SMTP address. Using input as-is." -f $normalizedIdentity)
+  return $normalizedIdentity.ToLowerInvariant()
 }
 
 function Resolve-ImtMailboxByAddress {
