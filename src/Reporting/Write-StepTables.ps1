@@ -494,6 +494,61 @@ function Write-ImtStepDataTables {
           }
         }
 
+        if ($data.PSObject.Properties.Name -contains 'FinalRealHitRows' -and $data.FinalRealHitRows) {
+          if (Write-ImtFormattedTable -StepName $stepName -Title 'Final real mailbox hits' -Rows @($data.FinalRealHitRows) -Columns @('Mailbox','ResultItemsCount','DateRangeItemsCount','EvidenceRowCount','TransportCorrelatedCount','MatchedKeywordsInRange') -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
+        }
+
+        if ($data.PSObject.Properties.Name -contains 'FinalNearMissRows' -and $data.FinalNearMissRows) {
+          if (Write-ImtFormattedTable -StepName $stepName -Title 'Final near misses' -Rows @($data.FinalNearMissRows) -Columns @('Mailbox','DateRangeItemsCount','PerKeywordHitTotal','MatchedKeywordsInRange','EvidenceRowCount') -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
+        }
+
+        if ($data.PSObject.Properties.Name -contains 'FinalMailboxFindingRows' -and $data.FinalMailboxFindingRows) {
+          $mailboxRows = @(
+            foreach ($row in @($data.FinalMailboxFindingRows | Sort-Object Mailbox)) {
+              [pscustomobject]@{
+                Mailbox = $row.Mailbox
+                ResultItemsCount = $row.ResultItemsCount
+                DateRangeItemsCount = $row.DateRangeItemsCount
+                PerKeywordHitTotal = $row.PerKeywordHitTotal
+                EvidenceRowCount = $row.EvidenceRowCount
+                TransportCorrelatedCount = $row.TransportCorrelatedCount
+                MatchedKeywordsInRange = $row.MatchedKeywordsInRange
+                Status = $row.Status
+                Error = $row.Error
+              }
+            }
+          )
+
+          if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Final mailbox findings' -Rows $mailboxRows -Columns @('ResultItemsCount','DateRangeItemsCount','PerKeywordHitTotal','EvidenceRowCount','TransportCorrelatedCount','MatchedKeywordsInRange','Status','Error') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
+        }
+
+        if ($data.PSObject.Properties.Name -contains 'FinalEvidenceDetailRows' -and $data.FinalEvidenceDetailRows) {
+          $evidenceRows = @(
+            foreach ($row in @($data.FinalEvidenceDetailRows | Sort-Object Mailbox,SentTime,Subject)) {
+              [pscustomobject]@{
+                Mailbox = $row.Mailbox
+                MailboxLocation = $row.MailboxLocation
+                SentTime = $row.SentTime
+                Subject = $row.Subject
+                To = $row.To
+                AttachmentCount = $row.AttachmentCount
+                TransportCorrelated = $row.TransportCorrelated
+                TrackingMessageId = $row.TrackingMessageId
+              }
+            }
+          )
+
+          if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Final evidence details' -Rows $evidenceRows -Columns @('MailboxLocation','SentTime','Subject','To','AttachmentCount','TransportCorrelated','TrackingMessageId') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+            $hasDetails = $true
+          }
+        }
+
         if ($data.FinalKeywordByMailboxRows) {
           $mailboxRows = @(
             foreach ($row in @($data.FinalKeywordByMailboxRows | Sort-Object Mailbox,Keyword)) {

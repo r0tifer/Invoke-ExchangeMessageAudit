@@ -60,7 +60,7 @@ Describe 'Write-ImtStepDataTables' {
 
     { Write-ImtStepDataTables -StepResult $result } | Should Not Throw
 
-    Assert-MockCalled Write-Host -Times 2 -Exactly -ParameterFilter {
+    Assert-MockCalled Write-Host -Scope It -Times 2 -Exactly -ParameterFilter {
       ($Object -as [string]) -match '\[TrackingReport\] \[Mailbox\] Mailbox: '
     }
   }
@@ -106,7 +106,59 @@ Describe 'Write-ImtStepDataTables' {
 
     { Write-ImtStepDataTables -StepResult $result } | Should Not Throw
 
-    Assert-MockCalled Write-Host -Times 2 -Exactly -ParameterFilter {
+    Assert-MockCalled Write-Host -Scope It -Times 2 -Exactly -ParameterFilter {
+      ($Object -as [string]) -match '\[RunSummary\] \[Mailbox\] Mailbox: '
+    }
+  }
+
+  It 'prints mailbox separators for run summary final mailbox findings' {
+    Mock Write-Host {}
+
+    $summaryData = [pscustomobject]@{
+      TotalSteps = 3
+      Counts = [pscustomobject]@{
+        OK = 3
+        WARN = 0
+        FAIL = 0
+        SKIP = 0
+      }
+      DurationSeconds = 12.34
+      StepOutcomes = @()
+      FinalRealHitRows = @()
+      FinalNearMissRows = @()
+      FinalKeywordByMailboxRows = @()
+      FinalMailboxFindingRows = @(
+        [pscustomobject]@{
+          Mailbox = 'alex.rivera@example.org'
+          ResultItemsCount = 5
+          DateRangeItemsCount = 8
+          PerKeywordHitTotal = 5
+          EvidenceRowCount = 2
+          TransportCorrelatedCount = 1
+          MatchedKeywordsInRange = 'audit'
+          Status = 'OK'
+          Error = $null
+        },
+        [pscustomobject]@{
+          Mailbox = 'jamie.chen@example.org'
+          ResultItemsCount = 0
+          DateRangeItemsCount = 4
+          PerKeywordHitTotal = 0
+          EvidenceRowCount = 0
+          TransportCorrelatedCount = 0
+          MatchedKeywordsInRange = ''
+          Status = 'OK'
+          Error = $null
+        }
+      )
+      FinalEvidenceDetailRows = @()
+    }
+
+    $result = New-ImtModuleResult -StepName 'RunSummary' -Status OK -Summary 'run summary' -Data $summaryData -Metrics @{} -Errors @()
+
+    { Write-ImtStepDataTables -StepResult $result } | Should Not Throw
+
+    Assert-MockCalled Write-Host -Scope It -Times 2 -Exactly -ParameterFilter {
       ($Object -as [string]) -match '\[RunSummary\] \[Mailbox\] Mailbox: '
     }
   }
@@ -136,5 +188,71 @@ Describe 'Write-ImtRunSummary' {
 
     @($result.Data.FinalKeywordByMailboxRows).Count | Should Be 1
     @($result.Data.StepOutcomes).Count | Should Be 2
+  }
+
+  It 'includes final mailbox findings, real hits, near misses, and evidence rows' {
+    $startedAt = [datetime]'2026-02-01T00:00:00Z'
+    $endedAt = [datetime]'2026-02-01T00:01:00Z'
+
+    $stepResults = @(
+      (New-ImtModuleResult -StepName 'ValidateInputs' -Status OK -Summary 'Input validation passed.' -Data $null -Metrics @{} -Errors @())
+      (New-ImtModuleResult -StepName 'DirectMailboxSearch' -Status OK -Summary 'Direct mailbox search complete.' -Data ([pscustomobject]@{
+        DirectRows = @(
+          [pscustomobject]@{
+            Mailbox = 'alex.rivera@example.org'
+            ResultItemsCount = 5
+            DateRangeItemsCount = 8
+            MatchedKeywordsInRange = 'audit;letter'
+            PerKeywordHitTotal = 5
+            ResultItemsSize = '12 KB'
+            Status = 'OK'
+            Error = $null
+          }
+          [pscustomobject]@{
+            Mailbox = 'jamie.chen@example.org'
+            ResultItemsCount = 0
+            DateRangeItemsCount = 3
+            MatchedKeywordsInRange = ''
+            PerKeywordHitTotal = 0
+            ResultItemsSize = '0 B'
+            Status = 'OK'
+            Error = $null
+          }
+        )
+      }) -Metrics @{} -Errors @())
+      (New-ImtModuleResult -StepName 'MailboxEvidence' -Status OK -Summary 'Mailbox evidence exported.' -Data ([pscustomobject]@{
+        SummaryRows = @(
+          [pscustomobject]@{
+            Mailbox = 'alex.rivera@example.org'
+            EvidenceRowCount = 2
+            TransportCorrelatedCount = 1
+          }
+        )
+        EvidenceRows = @(
+          [pscustomobject]@{
+            SourceMailbox = 'alex.rivera@example.org'
+            MailboxLocation = 'Primary'
+            SentTime = [datetime]'2026-01-31T18:15:00Z'
+            Subject = 'Audit evidence'
+            To = 'external@example.net'
+            Cc = ''
+            AttachmentCount = 1
+            TransportCorrelated = $true
+            TrackingMessageId = '<msg-01@example.org>'
+            EvidenceFolder = 'IMT_Evidence_20260201_000000\alex.rivera@example.org'
+          }
+        )
+      }) -Metrics @{} -Errors @())
+    )
+
+    $result = Write-ImtRunSummary -RunContext ([pscustomobject]@{}) -StepResults $stepResults -StartedAt $startedAt -EndedAt $endedAt
+
+    @($result.Data.FinalMailboxFindingRows).Count | Should Be 2
+    @($result.Data.FinalRealHitRows).Count | Should Be 1
+    @($result.Data.FinalNearMissRows).Count | Should Be 1
+    @($result.Data.FinalEvidenceDetailRows).Count | Should Be 1
+    @($result.Data.FinalRealHitRows)[0].Mailbox | Should Be 'alex.rivera@example.org'
+    @($result.Data.FinalNearMissRows)[0].Mailbox | Should Be 'jamie.chen@example.org'
+    @($result.Data.FinalMailboxFindingRows | Where-Object { $_.Mailbox -eq 'alex.rivera@example.org' })[0].EvidenceRowCount | Should Be 2
   }
 }
