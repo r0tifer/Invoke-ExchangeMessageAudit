@@ -25,7 +25,28 @@ Describe 'New-ImtMailboxSearchQuery' {
     $query | Should Match 'sent:10/01/2024\.\.09/30/2025'
     $query | Should Match 'from:'
     $query | Should Match 'to:'
+    $query | Should Match 'cc:'
     $query | Should Match 'hasattachment:true'
+  }
+}
+
+Describe 'New-ImtExportContentFilter' {
+  BeforeAll {
+    . (Join-Path $repoRoot 'src\Export\Invoke-MailboxExportRequests.ps1')
+  }
+
+  It 'builds recipient filters against both To and Cc' {
+    $filter = New-ImtExportContentFilter `
+      -StartAt ([datetime]'2024-10-01T00:00:00') `
+      -EndAt ([datetime]'2025-09-30T23:59:59') `
+      -SenderFilters @('rachel.aumavae@example.org') `
+      -RecipientFilters @('riveracarolyn929@gmail.com') `
+      -RequireAttachment
+
+    $filter | Should Match "From -eq 'rachel\.aumavae@example\.org'"
+    $filter | Should Match "To -like '\*riveracarolyn929@gmail\.com\*'"
+    $filter | Should Match "Cc -like '\*riveracarolyn929@gmail\.com\*'"
+    $filter | Should Match 'HasAttachment -eq \$true'
   }
 }
 

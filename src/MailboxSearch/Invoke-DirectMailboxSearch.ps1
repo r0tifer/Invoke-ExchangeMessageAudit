@@ -65,7 +65,8 @@ function New-ImtMailboxSearchQuery {
   $recipientParts = New-Object System.Collections.Generic.List[string]
   if ($RecipientFilters -and $RecipientFilters.Count -gt 0) {
     foreach ($recipient in ($RecipientFilters | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
-      [void]$recipientParts.Add("(to:`"$($recipient.Trim())`")")
+      $trimmedRecipient = $recipient.Trim()
+      [void]$recipientParts.Add("((to:`"$trimmedRecipient`") OR (cc:`"$trimmedRecipient`"))")
     }
   }
 
