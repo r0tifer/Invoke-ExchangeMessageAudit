@@ -43,7 +43,7 @@ Describe 'New-ImtExportContentFilter' {
       -RecipientFilters @('riveracarolyn929@gmail.com') `
       -RequireAttachment
 
-    $filter | Should Match "From -eq 'rachel\.aumavae@example\.org'"
+    $filter | Should Match "Sender -eq 'rachel\.aumavae@example\.org'"
     $filter | Should Match "To -like '\*riveracarolyn929@gmail\.com\*'"
     $filter | Should Match "Cc -like '\*riveracarolyn929@gmail\.com\*'"
     $filter | Should Match 'HasAttachment -eq \$true'

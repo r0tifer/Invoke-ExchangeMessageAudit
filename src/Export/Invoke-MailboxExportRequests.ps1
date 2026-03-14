@@ -51,7 +51,7 @@ function New-ImtExportContentFilter {
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object {
           $sender = $_.Trim().Replace("'", "''")
-          "(From -eq '$sender')"
+          "(Sender -eq '$sender')"
         }
     )
   }
