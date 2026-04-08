@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 . (Join-Path $repoRoot 'src\\Models\\New-ResultObjects.ps1')
 . (Join-Path $repoRoot 'src\\Logging\\Write-ImtLog.ps1')
+. (Join-Path $repoRoot 'src\\Reporting\\Export-TrackingReports.ps1')
 . (Join-Path $repoRoot 'src\\Reporting\\Write-StepTables.ps1')
 . (Join-Path $repoRoot 'src\\Reporting\\Write-RunSummary.ps1')
 
@@ -160,6 +161,78 @@ Describe 'Write-ImtStepDataTables' {
 
     Assert-MockCalled Write-Host -Scope It -Times 2 -Exactly -ParameterFilter {
       ($Object -as [string]) -match '\[RunSummary\] \[Mailbox\] Mailbox: '
+    }
+  }
+}
+
+Describe 'Export-ImtTrackingReports' {
+  It 'exports tracking and client attribution rows without requiring keyword inputs' {
+    $tempDir = Join-Path $env:TEMP ("imt-export-tests-{0}" -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+    try {
+      $runContext = [pscustomobject]@{
+        OutputDir = $tempDir
+        SafeRecipient = 'any-recipient'
+        SafeSender = 'Jeffrey.Roger@arcticslope.org'
+        Timestamp = '20260407_170200'
+        Inputs = [pscustomobject]@{
+          Keywords = @()
+        }
+      }
+
+      $results = @(
+        [pscustomobject]@{
+          Timestamp = [datetime]'2026-04-06T19:00:15'
+          EventId = 'SUBMIT'
+          Source = 'SMTP'
+          ServerHostname = 'EXCH-SE-02'
+          ClientHostname = 'EXCH-SE-02'
+          ConnectorId = 'InboundProxy'
+          Sender = 'Jeffrey.Roger@arcticslope.org'
+          Recipients = @('Susan.Miklavcic@arcticslope.org')
+          MessageSubject = 'Resignation from medical Staff'
+          MessageId = '<msg-01@example.org>'
+          InternalMessageId = '101'
+          RecipientStatus = $null
+          TotalBytes = 1024
+          SourceContext = 'MDB:01'
+        }
+      )
+
+      $clientRows = @(
+        [pscustomobject]@{
+          Mailbox = 'Jeffrey.Roger@arcticslope.org'
+          SubmittedAt = [datetime]'2026-04-06T19:00:15'
+          Subject = 'Resignation from medical Staff'
+          Recipients = 'Susan.Miklavcic@arcticslope.org'
+          AttributionSource = 'Transport'
+          AttributionConfidence = 'Low'
+          LikelyClient = 'SMTP or relay host: EXCH-SE-02'
+          ClientIPAddress = '172.16.2.16'
+          ProtocolEvidenceType = $null
+          ClientMachineName = $null
+          TransportClientHostname = 'EXCH-SE-02'
+        }
+      )
+
+      $result = Export-ImtTrackingReports `
+        -RunContext $runContext `
+        -Results $results `
+        -BaseTargetAddresses @('jeffrey.roger@arcticslope.org') `
+        -ClientAttributionRows $clientRows `
+        -ClientAuditRows @() `
+        -ClientProtocolRows @()
+
+      $result.Status | Should Be 'OK'
+      @($result.Data.ClientAttributionRows).Count | Should Be 1
+      $result.Metrics.ResultCount | Should Be 1
+      $result.Metrics.ClientAttributionRows | Should Be 1
+      $result.Metrics.ClientProtocolRows | Should Be 0
+      Test-Path -LiteralPath $result.Data.CsvMain | Should Be $true
+      Test-Path -LiteralPath $result.Data.ClientAttributionCsv | Should Be $true
+    } finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
 }

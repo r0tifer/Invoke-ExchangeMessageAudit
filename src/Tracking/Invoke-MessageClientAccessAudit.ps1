@@ -659,6 +659,35 @@ function Get-ImtTimeWindowTokens {
   @($tokens.ToArray() | Select-Object -Unique)
 }
 
+function Get-ImtProtocolWindowTokens {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [datetime]$StartDate,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$EndDate,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Hour', 'Day')]
+    [string]$Granularity
+  )
+
+  $tokenSets = New-Object System.Collections.Generic.List[string]
+
+  foreach ($token in @(Get-ImtTimeWindowTokens -StartDate $StartDate -EndDate $EndDate -Granularity $Granularity)) {
+    [void]$tokenSets.Add($token)
+  }
+
+  $utcStart = $StartDate.ToUniversalTime()
+  $utcEnd = $EndDate.ToUniversalTime()
+  foreach ($token in @(Get-ImtTimeWindowTokens -StartDate $utcStart -EndDate $utcEnd -Granularity $Granularity)) {
+    [void]$tokenSets.Add($token)
+  }
+
+  @($tokenSets.ToArray() | Select-Object -Unique)
+}
+
 function Get-ImtExchangeCsvHeaders {
   [CmdletBinding()]
   param(
@@ -876,8 +905,8 @@ function Get-ImtProtocolEvidenceRowsForSenders {
 
   $startDate = $RunContext.Start.AddMinutes(-15)
   $endDate = $RunContext.End.AddMinutes(15)
-  $hourTokens = Get-ImtTimeWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Hour
-  $dayTokens = Get-ImtTimeWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Day
+  $hourTokens = Get-ImtProtocolWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Hour
+  $dayTokens = Get-ImtProtocolWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Day
 
   $serverList = @(
     $Servers |

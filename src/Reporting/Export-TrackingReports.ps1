@@ -11,13 +11,20 @@ function Export-ImtTrackingReports {
     [AllowEmptyCollection()][object[]]$ClientProtocolRows
   )
 
-  if ($Results.Count -eq 0) {
+  $resultRowSet = @($Results)
+  $clientAttributionRowSet = @($ClientAttributionRows)
+  $clientAuditRowSet = @($ClientAuditRows)
+  $clientProtocolRowSet = @($ClientProtocolRows)
+  $inputKeywords = @($RunContext.Inputs.Keywords)
+
+  if (@($resultRowSet).Count -eq 0) {
     return New-ImtModuleResult -StepName 'TrackingReport' -Status 'WARN' -Summary 'No results to report/export.' -Data ([pscustomobject]@{
       CsvMain = $null
       ClientAttributionCsv = $null
       ClientAuditCsv = $null
       ClientProtocolCsv = $null
       ClientAttributionRows = @()
+      ClientAuditRows = @()
       ClientProtocolRows = @()
       TrackingKeywordRows = @()
       TrackingKeywordMailboxRows = @()
@@ -28,7 +35,7 @@ function Export-ImtTrackingReports {
   }
 
   $csvMain = Join-Path $RunContext.OutputDir ("MTL_{0}_from-{1}_{2}.csv" -f $RunContext.SafeRecipient, $RunContext.SafeSender, $RunContext.Timestamp)
-  $Results |
+  $resultRowSet |
     Sort-Object Timestamp |
     Select-Object Timestamp,EventId,Source,ServerHostname,ClientHostname,ConnectorId,
                   Sender,
@@ -37,8 +44,7 @@ function Export-ImtTrackingReports {
     Export-Csv -Path $csvMain -NoTypeInformation -Encoding UTF8
 
   $clientAttributionCsv = $null
-  $clientAttributionRowSet = @($ClientAttributionRows)
-  if ($clientAttributionRowSet.Count -gt 0) {
+  if (@($clientAttributionRowSet).Count -gt 0) {
     $clientAttributionCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_{0}.csv" -f $RunContext.Timestamp)
     $clientAttributionRowSet |
       Sort-Object Mailbox,SubmittedAt,Subject |
@@ -46,8 +52,7 @@ function Export-ImtTrackingReports {
   }
 
   $clientAuditCsv = $null
-  $clientAuditRowSet = @($ClientAuditRows)
-  if ($clientAuditRowSet.Count -gt 0) {
+  if (@($clientAuditRowSet).Count -gt 0) {
     $clientAuditCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_Audit_{0}.csv" -f $RunContext.Timestamp)
     $clientAuditRowSet |
       Select-Object LastAccessed,Operation,OperationResult,LogonType,MailboxOwnerUPN,LogonUserDisplayName,
@@ -57,8 +62,7 @@ function Export-ImtTrackingReports {
   }
 
   $clientProtocolCsv = $null
-  $clientProtocolRowSet = @($ClientProtocolRows)
-  if ($clientProtocolRowSet.Count -gt 0) {
+  if (@($clientProtocolRowSet).Count -gt 0) {
     $clientProtocolCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_Protocol_{0}.csv" -f $RunContext.Timestamp)
     $clientProtocolRowSet |
       Sort-Object Mailbox,Timestamp,EvidenceType |
@@ -66,7 +70,7 @@ function Export-ImtTrackingReports {
   }
 
   $dailyCounts = @(
-    $Results |
+    $resultRowSet |
       Group-Object { $_.Timestamp.Date } |
       Sort-Object Name |
       Select-Object @{n='Date';e={$_.Name.ToString('yyyy-MM-dd')}}, @{n='Count';e={$_.Count}}
@@ -75,9 +79,9 @@ function Export-ImtTrackingReports {
   $trackingKeywordRows = @()
   $trackingKeywordMailboxRows = @()
 
-  if ($RunContext.Inputs.Keywords -and $RunContext.Inputs.Keywords.Count -gt 0) {
+  if ($RunContext.Inputs.Keywords -and @($inputKeywords).Count -gt 0) {
     $normalizedKeywords = @(
-      $RunContext.Inputs.Keywords |
+      $inputKeywords |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { $_.Trim() } |
         Select-Object -Unique
@@ -88,7 +92,7 @@ function Export-ImtTrackingReports {
 
     foreach ($keyword in $normalizedKeywords) {
       $hits = @()
-      foreach ($event in $Results) {
+      foreach ($event in $resultRowSet) {
         $subject = ($event.MessageSubject -as [string])
         if ([string]::IsNullOrWhiteSpace($subject)) {
           continue
@@ -98,7 +102,7 @@ function Export-ImtTrackingReports {
         }
       }
 
-      $eventCount = $hits.Count
+      $eventCount = @($hits).Count
       $messageSet = @{}
       foreach ($hit in $hits) {
         $messageId = ($hit.MessageId -as [string])
@@ -125,7 +129,7 @@ function Export-ImtTrackingReports {
     foreach ($mailboxAddress in $resolvedMailboxAddresses) {
       foreach ($keyword in $normalizedKeywords) {
         $mailboxHits = @()
-        foreach ($event in $Results) {
+        foreach ($event in $resultRowSet) {
           $subject = ($event.MessageSubject -as [string])
           if ([string]::IsNullOrWhiteSpace($subject)) { continue }
           if ($subject.IndexOf($keyword, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
@@ -163,20 +167,20 @@ function Export-ImtTrackingReports {
         $keywordMailboxRows += [pscustomobject]@{
           Mailbox = $mailboxAddress
           Keyword = $keyword
-          EventHitCount = $mailboxHits.Count
+          EventHitCount = @($mailboxHits).Count
           DistinctMessageIdHitCount = @($mailboxMessageSet.Keys).Count
         }
       }
     }
 
-    if ($keywordRows.Count -gt 0) {
+    if (@($keywordRows).Count -gt 0) {
       $trackingKeywordRows = @($keywordRows)
       $keywordCsv = Join-Path $RunContext.OutputDir ("MTL_KeywordHits_{0}.csv" -f $RunContext.Timestamp)
       $trackingKeywordRows | Sort-Object Keyword | Export-Csv -Path $keywordCsv -NoTypeInformation -Encoding UTF8
       Write-ImtLog -Level DEBUG -Step 'TrackingReport' -EventType Progress -Message ("Keyword hit summary: {0}" -f $keywordCsv)
     }
 
-    if ($keywordMailboxRows.Count -gt 0) {
+    if (@($keywordMailboxRows).Count -gt 0) {
       $trackingKeywordMailboxRows = @($keywordMailboxRows)
       $keywordMailboxCsv = Join-Path $RunContext.OutputDir ("MTL_KeywordHits_ByMailbox_{0}.csv" -f $RunContext.Timestamp)
       $trackingKeywordMailboxRows | Sort-Object Mailbox,Keyword | Export-Csv -Path $keywordMailboxCsv -NoTypeInformation -Encoding UTF8
@@ -195,12 +199,12 @@ function Export-ImtTrackingReports {
     TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows)
     DailyCounts = @($dailyCounts)
   }) -Metrics @{
-    ResultCount = $Results.Count
-    ClientAttributionRows = $clientAttributionRowSet.Count
-    ClientAuditRows = $clientAuditRowSet.Count
-    ClientProtocolRows = $clientProtocolRowSet.Count
-    TrackingKeywordRows = $trackingKeywordRows.Count
-    TrackingKeywordMailboxRows = $trackingKeywordMailboxRows.Count
-    DailyCounts = $dailyCounts.Count
+    ResultCount = @($resultRowSet).Count
+    ClientAttributionRows = @($clientAttributionRowSet).Count
+    ClientAuditRows = @($clientAuditRowSet).Count
+    ClientProtocolRows = @($clientProtocolRowSet).Count
+    TrackingKeywordRows = @($trackingKeywordRows).Count
+    TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows).Count
+    DailyCounts = @($dailyCounts).Count
   } -Errors @()
 }

@@ -238,6 +238,18 @@ Describe 'Get-ImtProtocolCandidateFiles' {
   }
 }
 
+Describe 'Get-ImtProtocolWindowTokens' {
+  It 'includes both local and UTC hour tokens for evening windows that cross UTC midnight' {
+    $start = [datetime]'2026-04-06T15:00:00'
+    $end = [datetime]'2026-04-06T22:00:00'
+
+    $tokens = @(Get-ImtProtocolWindowTokens -StartDate $start -EndDate $end -Granularity Hour)
+
+    @($tokens | Where-Object { $_ -eq '2026040615' }).Count | Should BeGreaterThan 0
+    @($tokens | Where-Object { $_ -eq '2026040623' }).Count | Should BeGreaterThan 0
+  }
+}
+
 Describe 'Resolve-ImtTrackingDeviceAssessment' {
   It 'falls back to transport client host when mailbox audit data is unavailable' {
     $trailHints = [pscustomobject]@{
