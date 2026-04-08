@@ -448,7 +448,7 @@ function Get-ImtMailboxAuditQueryParameters {
 
   $parameterType = $resultSizeParameter.ParameterType
   if ($parameterType -eq [int] -or $parameterType -eq [int32]) {
-    $params.ResultSize = [int]::MaxValue
+    $params.ResultSize = 250000
     return $params
   }
 

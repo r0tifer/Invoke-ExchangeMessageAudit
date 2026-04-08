@@ -107,7 +107,7 @@ Describe 'Get-ImtMailboxAuditQueryParameters' {
       -StartDate ([datetime]'2026-04-06T15:00:00') `
       -EndDate ([datetime]'2026-04-06T22:00:00')
 
-    $params.ResultSize | Should Be ([int]::MaxValue)
+    $params.ResultSize | Should Be 250000
   }
 }
 
