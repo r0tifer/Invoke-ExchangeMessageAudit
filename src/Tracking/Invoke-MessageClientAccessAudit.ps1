@@ -356,6 +356,7 @@ function Resolve-ImtTrackingDeviceAssessment {
   [CmdletBinding()]
   param(
     [pscustomobject]$AuditMatch,
+    [pscustomobject]$ProtocolMatch,
     [Parameter(Mandatory = $true)]
     [pscustomobject]$TrailHints
   )
@@ -379,7 +380,62 @@ function Resolve-ImtTrackingDeviceAssessment {
       ClientIPAddress = $clientIpAddress
       TransportClientHostname = $TrailHints.ClientHostname
       TransportClientIPAddress = $TrailHints.ClientIPAddress
+      ProtocolEvidenceType = $null
+      ProtocolLogServer = $null
+      ProtocolLogPath = $null
+      ProtocolUserAgent = $null
+      ProtocolRemoteEndpoint = $null
+      ProtocolTimestamp = $null
+      ProtocolDeltaMinutes = $null
       EvidenceNote = ('Mailbox audit match within {0} minute(s).' -f $AuditMatch.DeltaMinutes)
+    }
+  }
+
+  if ($ProtocolMatch) {
+    $protocolRow = $ProtocolMatch.Row
+    $evidenceType = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'EvidenceType') -as [string]
+    $userAgent = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'UserAgent') -as [string]
+    $clientIpAddress = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'ClientIPAddress') -as [string]
+    $remoteEndpoint = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'RemoteEndpoint') -as [string]
+    $likelyClient = switch -Regex ($evidenceType) {
+      '^HttpProxyMapi$' { 'Outlook desktop'; break }
+      '^HttpProxyOwa$' { 'Outlook on the web'; break }
+      '^HttpProxyEas$' { 'Mobile client via ActiveSync'; break }
+      '^HttpProxyEws$' { 'Exchange Web Services client'; break }
+      '^SmtpReceive' {
+        if (-not [string]::IsNullOrWhiteSpace($remoteEndpoint)) {
+          "SMTP submission from $remoteEndpoint"
+        } elseif (-not [string]::IsNullOrWhiteSpace($clientIpAddress)) {
+          "SMTP submission from $clientIpAddress"
+        } else {
+          'SMTP submission'
+        }
+        break
+      }
+      default {
+        Resolve-ImtTrackingLikelyClient -ClientInfoString $userAgent -ClientProcessName $null -ClientHostname $TrailHints.ClientHostname
+      }
+    }
+
+    return [pscustomobject]@{
+      AttributionSource = 'ProtocolLog'
+      AttributionConfidence = $ProtocolMatch.Confidence
+      LikelyClient = $likelyClient
+      ClientInfoString = $userAgent
+      ClientProcessName = $null
+      ClientMachineName = $null
+      ClientVersion = $null
+      ClientIPAddress = if (-not [string]::IsNullOrWhiteSpace($clientIpAddress)) { $clientIpAddress } else { $remoteEndpoint }
+      TransportClientHostname = $TrailHints.ClientHostname
+      TransportClientIPAddress = $TrailHints.ClientIPAddress
+      ProtocolEvidenceType = $evidenceType
+      ProtocolLogServer = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'Server') -as [string]
+      ProtocolLogPath = (Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'LogPath') -as [string]
+      ProtocolUserAgent = $userAgent
+      ProtocolRemoteEndpoint = $remoteEndpoint
+      ProtocolTimestamp = Get-ImtTrackingPropertyValue -InputObject $protocolRow -PropertyName 'Timestamp'
+      ProtocolDeltaMinutes = $ProtocolMatch.DeltaMinutes
+      EvidenceNote = ('Protocol log match ({0}) within {1} minute(s).' -f $evidenceType, $ProtocolMatch.DeltaMinutes)
     }
   }
 
@@ -395,6 +451,13 @@ function Resolve-ImtTrackingDeviceAssessment {
       ClientIPAddress = $TrailHints.ClientIPAddress
       TransportClientHostname = $TrailHints.ClientHostname
       TransportClientIPAddress = $TrailHints.ClientIPAddress
+      ProtocolEvidenceType = $null
+      ProtocolLogServer = $null
+      ProtocolLogPath = $null
+      ProtocolUserAgent = $null
+      ProtocolRemoteEndpoint = $null
+      ProtocolTimestamp = $null
+      ProtocolDeltaMinutes = $null
       EvidenceNote = 'Derived from message tracking only. Confirm with IIS, ActiveSync, MAPI/HTTP, IMAP, or SMTP protocol logs if needed.'
     }
   }
@@ -410,6 +473,13 @@ function Resolve-ImtTrackingDeviceAssessment {
     ClientIPAddress = $null
     TransportClientHostname = $TrailHints.ClientHostname
     TransportClientIPAddress = $TrailHints.ClientIPAddress
+    ProtocolEvidenceType = $null
+    ProtocolLogServer = $null
+    ProtocolLogPath = $null
+    ProtocolUserAgent = $null
+    ProtocolRemoteEndpoint = $null
+    ProtocolTimestamp = $null
+    ProtocolDeltaMinutes = $null
     EvidenceNote = 'Exchange tracking did not expose a client host, and no correlated mailbox audit row was found.'
   }
 }
@@ -454,6 +524,554 @@ function Get-ImtMailboxAuditQueryParameters {
   $params
 }
 
+function ConvertTo-ImtProtocolComparableTimestamp {
+  [CmdletBinding()]
+  param(
+    [object]$Value
+  )
+
+  if ($null -eq $Value) {
+    return $null
+  }
+
+  try {
+    $timestamp = [datetime]$Value
+    if ($timestamp.Kind -eq [System.DateTimeKind]::Utc) {
+      return $timestamp.ToLocalTime()
+    }
+
+    $timestamp
+  } catch {
+    $null
+  }
+}
+
+function Get-ImtExchangeInstallRoot {
+  [CmdletBinding()]
+  param()
+
+  if (-not [string]::IsNullOrWhiteSpace($env:ExchangeInstallPath)) {
+    return $env:ExchangeInstallPath.TrimEnd('\')
+  }
+
+  'C:\Program Files\Microsoft\Exchange Server\V15'
+}
+
+function Join-ImtWindowsPath {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BasePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ChildPath
+  )
+
+  ('{0}\{1}' -f $BasePath.TrimEnd('\'), $ChildPath.TrimStart('\'))
+}
+
+function Test-ImtLiteralPathExists {
+  [CmdletBinding()]
+  param(
+    [string]$Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return $false
+  }
+
+  try {
+    [bool](Test-Path -LiteralPath $Path -ErrorAction Stop)
+  } catch {
+    $false
+  }
+}
+
+function Get-ImtProtocolLogDirectoryPath {
+  [CmdletBinding()]
+  param(
+    [string]$Server,
+    [Parameter(Mandatory = $true)]
+    [string]$RelativePath
+  )
+
+  $exchangeRoot = Get-ImtExchangeInstallRoot
+  $qualifier = Split-Path -Path $exchangeRoot -Qualifier
+  $relativeExchangeRoot = $exchangeRoot.Substring($qualifier.Length).TrimStart('\')
+  $driveShare = '{0}$' -f $qualifier.TrimEnd(':')
+
+  if ([string]::IsNullOrWhiteSpace($Server)) {
+    return Join-ImtWindowsPath -BasePath $exchangeRoot -ChildPath $RelativePath
+  }
+
+  $serverValue = $Server.Trim()
+  $localComputer = $env:COMPUTERNAME
+  $isLocal = $false
+  if (-not [string]::IsNullOrWhiteSpace($localComputer)) {
+    $isLocal = $serverValue.Equals($localComputer, [System.StringComparison]::OrdinalIgnoreCase) -or
+      $serverValue.Split('.')[0].Equals($localComputer, [System.StringComparison]::OrdinalIgnoreCase)
+  }
+
+  if ($isLocal) {
+    return Join-ImtWindowsPath -BasePath $exchangeRoot -ChildPath $RelativePath
+  }
+
+  $uncRoot = '\\{0}\{1}' -f $serverValue, $driveShare
+  $remoteExchangeRoot = if ([string]::IsNullOrWhiteSpace($relativeExchangeRoot)) {
+    $uncRoot
+  } else {
+    Join-ImtWindowsPath -BasePath $uncRoot -ChildPath $relativeExchangeRoot
+  }
+
+  Join-ImtWindowsPath -BasePath $remoteExchangeRoot -ChildPath $RelativePath
+}
+
+function Get-ImtTimeWindowTokens {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [datetime]$StartDate,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$EndDate,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Hour', 'Day')]
+    [string]$Granularity
+  )
+
+  $tokens = New-Object System.Collections.Generic.List[string]
+
+  if ($Granularity -eq 'Hour') {
+    $cursor = [datetime]::new($StartDate.Year, $StartDate.Month, $StartDate.Day, $StartDate.Hour, 0, 0)
+    while ($cursor -le $EndDate) {
+      [void]$tokens.Add($cursor.ToString('yyyyMMddHH'))
+      $cursor = $cursor.AddHours(1)
+    }
+  } else {
+    $cursor = [datetime]::new($StartDate.Year, $StartDate.Month, $StartDate.Day, 0, 0, 0)
+    while ($cursor -le $EndDate) {
+      [void]$tokens.Add($cursor.ToString('yyyyMMdd'))
+      $cursor = $cursor.AddDays(1)
+    }
+  }
+
+  @($tokens.ToArray() | Select-Object -Unique)
+}
+
+function Get-ImtExchangeCsvHeaders {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  $headerLine = @(
+    Select-String -Path $Path -Pattern '^#Fields:' -ErrorAction Stop
+  ) | Select-Object -Last 1
+
+  if (-not $headerLine) {
+    return @()
+  }
+
+  $headerText = $headerLine.Line.Substring(8).Trim()
+  if ([string]::IsNullOrWhiteSpace($headerText)) {
+    return @()
+  }
+
+  if ($headerText -notmatch ',') {
+    return @()
+  }
+
+  @(
+    $headerText -split '\s*,\s*' |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  )
+}
+
+function ConvertFrom-ImtExchangeCsvMatch {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Line,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Headers
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Line) -or $Line -match '^#' -or $Headers.Count -eq 0) {
+    return $null
+  }
+
+  try {
+    $Line | ConvertFrom-Csv -Header $Headers
+  } catch {
+    $null
+  }
+}
+
+function Get-ImtProtocolSearchPatterns {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Sender,
+
+    $ResolvedMailbox
+  )
+
+  $patterns = New-Object System.Collections.Generic.List[string]
+  [void]$patterns.Add($Sender.Trim())
+
+  if ($ResolvedMailbox) {
+    $exchangeGuid = Get-ImtTrackingFirstAvailablePropertyValue -InputObject $ResolvedMailbox -PropertyNames @('ExchangeGuid', 'Guid')
+    if ($exchangeGuid) {
+      $guidText = ($exchangeGuid -as [string])
+      if (-not [string]::IsNullOrWhiteSpace($guidText)) {
+        $normalizedGuid = $guidText.Trim()
+        [void]$patterns.Add(('MailboxId={0}@' -f $normalizedGuid))
+        [void]$patterns.Add($normalizedGuid)
+      }
+    }
+  }
+
+  @($patterns.ToArray() | Select-Object -Unique)
+}
+
+function Get-ImtProtocolCandidateFiles {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$DirectoryPath,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Tokens
+  )
+
+  if (-not (Test-ImtLiteralPathExists -Path $DirectoryPath)) {
+    return @()
+  }
+
+  $files = New-Object System.Collections.Generic.List[string]
+  $normalizedTokens = @(
+    $Tokens |
+      ForEach-Object { $_ -as [string] } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
+  )
+
+  foreach ($token in $normalizedTokens) {
+    foreach ($path in @(
+        Get-ChildItem -LiteralPath $DirectoryPath -Filter ("*{0}*" -f $token) -ErrorAction Stop |
+          Where-Object {
+            ($_.PSObject.Properties.Match('PSIsContainer').Count -eq 0) -or (-not $_.PSIsContainer)
+          } |
+          Select-Object -ExpandProperty FullName
+      )) {
+      [void]$files.Add($path)
+    }
+  }
+
+  @($files.ToArray() | Select-Object -Unique)
+}
+
+function Get-ImtProtocolRowsFromFiles {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Paths,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Patterns,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Mailbox,
+
+    [Parameter(Mandatory = $true)]
+    [string]$EvidenceType,
+
+    [string]$Server,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$StartDate,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$EndDate
+  )
+
+  $rows = New-Object System.Collections.Generic.List[object]
+  $pathSet = @(
+    $Paths |
+      ForEach-Object { $_ -as [string] } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
+  )
+  if ($pathSet.Count -eq 0) {
+    return @()
+  }
+
+  $matchesByPath = @(
+    Select-String -Path $pathSet -Pattern $Patterns -SimpleMatch -ErrorAction Stop |
+      Group-Object Path
+  )
+
+  foreach ($matchGroup in $matchesByPath) {
+    $path = $matchGroup.Name
+    $headers = @(Get-ImtExchangeCsvHeaders -Path $path)
+    if ($headers.Count -eq 0) {
+      continue
+    }
+
+    foreach ($match in @($matchGroup.Group)) {
+      $parsedRow = ConvertFrom-ImtExchangeCsvMatch -Line $match.Line -Headers $headers
+      if (-not $parsedRow) {
+        continue
+      }
+
+      $timestamp = ConvertTo-ImtProtocolComparableTimestamp -Value (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('date-time', 'DateTime', 'datetime'))
+      if (-not $timestamp) {
+        continue
+      }
+
+      if ($timestamp -lt $StartDate -or $timestamp -gt $EndDate) {
+        continue
+      }
+
+      [void]$rows.Add([pscustomobject]@{
+        Mailbox = $Mailbox
+        EvidenceType = $EvidenceType
+        Server = if (-not [string]::IsNullOrWhiteSpace($Server)) { $Server } else { (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('ServerHostName', 'server-host-name', 's-computername')) }
+        LogPath = $path
+        Timestamp = $timestamp
+        Protocol = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('Protocol', 'protocol'))
+        UrlStem = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('UrlStem', 'url-stem', 'cs-uri-stem'))
+        UserAgent = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('UserAgent', 'user-agent', 'cs(User-Agent)'))
+        ClientIPAddress = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('ClientIpAddress', 'ClientIPAddress', 'client-ip-address', 'c-ip'))
+        AuthenticatedUser = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('AuthenticatedUser', 'authenticated-user', 'UserEmail', 'user-email', 'cs-username'))
+        AnchorMailbox = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('AnchorMailbox', 'anchor-mailbox'))
+        RemoteEndpoint = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('remote-endpoint', 'RemoteEndpoint'))
+        SessionId = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('session-id', 'SessionId'))
+        Event = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('event', 'Event'))
+        Data = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $parsedRow -PropertyNames @('data', 'Data', 'GenericInfo', 'generic-info'))
+      })
+    }
+  }
+
+  @($rows.ToArray())
+}
+
+function Get-ImtProtocolEvidenceRowsForSenders {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    $RunContext,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Senders,
+
+    [AllowEmptyCollection()]
+    [string[]]$Servers,
+
+    [hashtable]$ResolvedMailboxBySender
+  )
+
+  $startDate = $RunContext.Start.AddMinutes(-15)
+  $endDate = $RunContext.End.AddMinutes(15)
+  $hourTokens = Get-ImtTimeWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Hour
+  $dayTokens = Get-ImtTimeWindowTokens -StartDate $startDate -EndDate $endDate -Granularity Day
+
+  $serverList = @(
+    $Servers |
+      ForEach-Object { $_ -as [string] } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
+  )
+
+  if ($serverList.Count -eq 0) {
+    $serverList = @($null)
+  }
+
+  $logSpecs = @(
+    @{ EvidenceType = 'HttpProxyMapi'; RelativePath = 'Logging\HttpProxy\Mapi'; Tokens = $hourTokens }
+    @{ EvidenceType = 'HttpProxyOwa'; RelativePath = 'Logging\HttpProxy\Owa'; Tokens = $hourTokens }
+    @{ EvidenceType = 'HttpProxyEas'; RelativePath = 'Logging\HttpProxy\Eas'; Tokens = $hourTokens }
+    @{ EvidenceType = 'HttpProxyEws'; RelativePath = 'Logging\HttpProxy\Ews'; Tokens = $hourTokens }
+    @{ EvidenceType = 'SmtpReceiveFrontEnd'; RelativePath = 'TransportRoles\Logs\FrontEnd\ProtocolLog\SmtpReceive'; Tokens = $dayTokens }
+    @{ EvidenceType = 'SmtpReceiveHub'; RelativePath = 'TransportRoles\Logs\Hub\ProtocolLog\SmtpReceive'; Tokens = $dayTokens }
+  )
+
+  $rows = New-Object System.Collections.Generic.List[object]
+  $failures = New-Object System.Collections.Generic.List[string]
+  $candidateFileCache = @{}
+
+  foreach ($sender in @($Senders | Sort-Object -Unique)) {
+    $resolvedMailbox = $null
+    if ($ResolvedMailboxBySender -and $ResolvedMailboxBySender.ContainsKey($sender)) {
+      $resolvedMailbox = $ResolvedMailboxBySender[$sender]
+    }
+
+    $patterns = Get-ImtProtocolSearchPatterns -Sender $sender -ResolvedMailbox $resolvedMailbox
+
+    foreach ($server in $serverList) {
+      foreach ($spec in $logSpecs) {
+        try {
+          $cacheKey = '{0}|{1}|{2}' -f ($server -as [string]), $spec.EvidenceType, ($spec.Tokens -join ',')
+          if (-not $candidateFileCache.ContainsKey($cacheKey)) {
+            $directoryPath = Get-ImtProtocolLogDirectoryPath -Server $server -RelativePath $spec.RelativePath
+            $candidateFileCache[$cacheKey] = @(Get-ImtProtocolCandidateFiles -DirectoryPath $directoryPath -Tokens $spec.Tokens)
+          }
+
+          $candidateFiles = @($candidateFileCache[$cacheKey])
+          if ($candidateFiles.Count -eq 0) {
+            continue
+          }
+
+          foreach ($protocolRow in @(Get-ImtProtocolRowsFromFiles -Paths $candidateFiles -Patterns $patterns -Mailbox $sender -EvidenceType $spec.EvidenceType -Server $server -StartDate $startDate -EndDate $endDate)) {
+            [void]$rows.Add($protocolRow)
+          }
+        } catch {
+          [void]$failures.Add(('{0}|{1}: {2}' -f ($server -as [string]), $spec.EvidenceType, $_.Exception.Message))
+        }
+      }
+    }
+  }
+
+  $dedupedRows = @(
+    $rows.ToArray() |
+      Group-Object {
+        '{0}|{1}|{2}|{3}|{4}' -f `
+          (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'Mailbox'), `
+          (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'EvidenceType'), `
+          ((Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'Timestamp') -as [datetime]), `
+          (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'LogPath'), `
+          (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'SessionId')
+      } |
+      ForEach-Object { $_.Group[0] }
+  )
+
+  [pscustomobject]@{
+    Rows = @($dedupedRows)
+    Failures = @($failures.ToArray() | Select-Object -Unique)
+  }
+}
+
+function Find-ImtTrackingBestProtocolLogMatch {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$Message,
+
+    [AllowEmptyCollection()]
+    [object[]]$ProtocolRows,
+
+    [ValidateRange(1, 120)]
+    [int]$WindowMinutes = 15
+  )
+
+  if (-not $ProtocolRows -or @($ProtocolRows).Count -eq 0) {
+    return $null
+  }
+
+  $messageTimestamp = [datetime]$Message.SubmittedAt
+  $messageSender = ($Message.Sender -as [string])
+  $messageRecipients = @(
+    $Message.Recipients |
+      ForEach-Object { $_ -as [string] } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  )
+
+  $scoredRows = New-Object System.Collections.Generic.List[object]
+
+  foreach ($row in @($ProtocolRows)) {
+    $timestamp = Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'Timestamp'
+    if (-not $timestamp) {
+      continue
+    }
+
+    $rowTimestamp = [datetime]$timestamp
+    $deltaMinutes = [math]::Abs((New-TimeSpan -Start $messageTimestamp -End $rowTimestamp).TotalMinutes)
+    if ($deltaMinutes -gt $WindowMinutes) {
+      continue
+    }
+
+    $evidenceType = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'EvidenceType') -as [string]
+    $userAgent = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'UserAgent') -as [string]
+    $urlStem = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'UrlStem') -as [string]
+    $evidenceBlob = Join-ImtTrackingDistinctValues -Values @(
+      (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'AuthenticatedUser'),
+      (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'AnchorMailbox'),
+      (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'Data'),
+      $urlStem,
+      $userAgent
+    )
+
+    $recipientHits = 0
+    foreach ($recipient in $messageRecipients) {
+      if ($evidenceBlob.IndexOf($recipient, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $recipientHits++
+      }
+    }
+
+    $score = switch -Regex ($evidenceType) {
+      '^SmtpReceive' { 90; break }
+      '^HttpProxyMapi$' { 70; break }
+      '^HttpProxyOwa$' { 65; break }
+      '^HttpProxyEas$' { 60; break }
+      '^HttpProxyEws$' { 55; break }
+      default { 40 }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($messageSender) -and $evidenceBlob.IndexOf($messageSender, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      $score += 20
+    }
+
+    if ($recipientHits -gt 0) {
+      $score += (15 * $recipientHits)
+    }
+
+    if ($urlStem -match '(?i)/mapi/emsmdb/') {
+      $score += 10
+    }
+
+    if ($userAgent -match '(?i)Outlook|MAPI') {
+      $score += 10
+    }
+
+    $score += [math]::Max(0, (30 - [int][math]::Floor($deltaMinutes * 2)))
+
+    [void]$scoredRows.Add([pscustomobject]@{
+      Row = $row
+      Score = $score
+      DeltaMinutes = [math]::Round($deltaMinutes, 2)
+      EvidenceType = $evidenceType
+      RecipientHits = $recipientHits
+    })
+  }
+
+  $bestMatch = $scoredRows |
+    Sort-Object `
+      @{ Expression = 'Score'; Descending = $true }, `
+      @{ Expression = 'DeltaMinutes'; Descending = $false } |
+    Select-Object -First 1
+
+  if (-not $bestMatch) {
+    return $null
+  }
+
+  $confidence = 'Low'
+  if ($bestMatch.EvidenceType -match '^SmtpReceive' -and $bestMatch.DeltaMinutes -le 2 -and $bestMatch.RecipientHits -gt 0) {
+    $confidence = 'High'
+  } elseif ($bestMatch.DeltaMinutes -le 5) {
+    $confidence = 'Medium'
+  }
+
+  [pscustomobject]@{
+    Row = $bestMatch.Row
+    Score = $bestMatch.Score
+    DeltaMinutes = $bestMatch.DeltaMinutes
+    Confidence = $confidence
+  }
+}
+
 function Invoke-ImtMessageClientAccessAudit {
   [CmdletBinding()]
   param(
@@ -465,19 +1083,26 @@ function Invoke-ImtMessageClientAccessAudit {
     [object[]]$Results,
 
     [AllowEmptyCollection()]
-    [string[]]$CandidateMailboxAddresses
+    [string[]]$CandidateMailboxAddresses,
+
+    [AllowEmptyCollection()]
+    [string[]]$Servers
   )
 
   if (@($Results).Count -eq 0) {
     return New-ImtModuleResult -StepName 'MessageClientAccess' -Status 'SKIP' -Summary 'Client access correlation skipped because there were no tracking results.' -Data ([pscustomobject]@{
       Rows = @()
       AuditRows = @()
+      ProtocolRows = @()
       AuditAvailable = $false
       AuditFailures = @()
+      ProtocolFailures = @()
     }) -Metrics @{
       MessageRows = 0
       MailboxAuditRows = 0
+      ProtocolRows = 0
       AuditFailures = 0
+      ProtocolFailures = 0
     } -Errors @()
   }
 
@@ -502,6 +1127,7 @@ function Invoke-ImtMessageClientAccessAudit {
   $auditFailures = New-Object System.Collections.Generic.List[string]
   $auditRows = New-Object System.Collections.Generic.List[object]
   $auditRowsBySender = @{}
+  $resolvedMailboxBySender = @{}
 
   foreach ($sender in @($senderSet.Keys | Sort-Object)) {
     $shouldAttemptAudit = ($candidateMailboxSet.Count -eq 0) -or $candidateMailboxSet.ContainsKey($sender)
@@ -518,6 +1144,7 @@ function Invoke-ImtMessageClientAccessAudit {
       Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Skipping mailbox audit correlation for sender '{0}' because it could not be resolved to a local mailbox." -f $sender)
       continue
     }
+    $resolvedMailboxBySender[$sender] = $resolvedMailbox
 
     try {
       Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Querying mailbox audit log for sender '{0}'." -f $sender)
@@ -541,6 +1168,14 @@ function Invoke-ImtMessageClientAccessAudit {
 
   if (-not $auditAvailable) {
     Write-ImtLog -Level WARN -Step 'MessageClientAccess' -EventType Progress -Message 'Search-MailboxAuditLog is unavailable in this session. Falling back to tracking-only device hints.'
+  }
+
+  $protocolEvidenceResult = Get-ImtProtocolEvidenceRowsForSenders -RunContext $RunContext -Senders @($senderSet.Keys) -Servers $Servers -ResolvedMailboxBySender $resolvedMailboxBySender
+  $protocolRows = @($protocolEvidenceResult.Rows)
+  $protocolFailures = @($protocolEvidenceResult.Failures)
+
+  foreach ($failure in @($protocolFailures)) {
+    Write-ImtLog -Level WARN -Step 'MessageClientAccess' -EventType Progress -Message ("Protocol log evidence query warning: {0}" -f $failure)
   }
 
   $messageRows = New-Object System.Collections.Generic.List[object]
@@ -574,7 +1209,28 @@ function Invoke-ImtMessageClientAccessAudit {
       -AuditRows $senderAuditRows `
       -WindowMinutes $correlationWindowMinutes
 
-    $deviceAssessment = Resolve-ImtTrackingDeviceAssessment -AuditMatch $auditMatch -TrailHints $trailHints
+    $senderProtocolRows = @(
+      $protocolRows |
+        Where-Object {
+          $rowMailbox = (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'Mailbox') -as [string]
+          $rowMailbox -and $normalizedSender -and $rowMailbox.Trim().ToLowerInvariant() -eq $normalizedSender
+        }
+    )
+
+    $protocolMatch = Find-ImtTrackingBestProtocolLogMatch -Message ([pscustomobject]@{
+        SubmittedAt = $submittedAt
+        Sender = $sender
+        Recipients = @(
+          $groupRows |
+            ForEach-Object { @(Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'Recipients') } |
+            ForEach-Object { $_ -as [string] } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Unique
+        )
+      }) `
+      -ProtocolRows $senderProtocolRows
+
+    $deviceAssessment = Resolve-ImtTrackingDeviceAssessment -AuditMatch $auditMatch -ProtocolMatch $protocolMatch -TrailHints $trailHints
 
     [void]$messageRows.Add([pscustomobject]@{
       Mailbox = $sender
@@ -600,6 +1256,13 @@ function Invoke-ImtMessageClientAccessAudit {
       ClientIPAddress = $deviceAssessment.ClientIPAddress
       TransportClientHostname = $deviceAssessment.TransportClientHostname
       TransportClientIPAddress = $deviceAssessment.TransportClientIPAddress
+      ProtocolEvidenceType = $deviceAssessment.ProtocolEvidenceType
+      ProtocolLogServer = $deviceAssessment.ProtocolLogServer
+      ProtocolLogPath = $deviceAssessment.ProtocolLogPath
+      ProtocolUserAgent = $deviceAssessment.ProtocolUserAgent
+      ProtocolRemoteEndpoint = $deviceAssessment.ProtocolRemoteEndpoint
+      ProtocolTimestamp = $deviceAssessment.ProtocolTimestamp
+      ProtocolDeltaMinutes = $deviceAssessment.ProtocolDeltaMinutes
       EvidenceNote = $deviceAssessment.EvidenceNote
       MailboxAuditOperation = if ($auditMatch) { (Get-ImtTrackingPropertyValue -InputObject $auditMatch.Row -PropertyName 'Operation') -as [string] } else { $null }
       MailboxAuditLogonType = if ($auditMatch) { (Get-ImtTrackingPropertyValue -InputObject $auditMatch.Row -PropertyName 'LogonType') -as [string] } else { $null }
@@ -616,28 +1279,34 @@ function Invoke-ImtMessageClientAccessAudit {
     None = @($rowArray | Where-Object { $_.AttributionConfidence -eq 'None' }).Count
   }
 
-  $status = if (-not $auditAvailable -or $auditFailures.Count -gt 0 -or $confidenceCounts.None -gt 0) { 'WARN' } else { 'OK' }
-  $summary = "Client attribution rows={0}; High={1}; Medium={2}; Low={3}; None={4}; MailboxAuditRows={5}; AuditFailures={6}" -f `
+  $status = if (-not $auditAvailable -or $auditFailures.Count -gt 0 -or $protocolFailures.Count -gt 0 -or $confidenceCounts.None -gt 0) { 'WARN' } else { 'OK' }
+  $summary = "Client attribution rows={0}; High={1}; Medium={2}; Low={3}; None={4}; MailboxAuditRows={5}; ProtocolRows={6}; AuditFailures={7}; ProtocolFailures={8}" -f `
     $rowArray.Count, `
     $confidenceCounts.High, `
     $confidenceCounts.Medium, `
     $confidenceCounts.Low, `
     $confidenceCounts.None, `
     $auditRows.Count, `
-    $auditFailures.Count
+    $protocolRows.Count, `
+    $auditFailures.Count, `
+    $protocolFailures.Count
 
   New-ImtModuleResult -StepName 'MessageClientAccess' -Status $status -Summary $summary -Data ([pscustomobject]@{
     Rows = $rowArray
     AuditRows = @($auditRows.ToArray())
+    ProtocolRows = @($protocolRows)
     AuditAvailable = [bool]$auditAvailable
     AuditFailures = @($auditFailures.ToArray())
+    ProtocolFailures = @($protocolFailures)
   }) -Metrics @{
     MessageRows = $rowArray.Count
     MailboxAuditRows = $auditRows.Count
+    ProtocolRows = $protocolRows.Count
     HighConfidence = $confidenceCounts.High
     MediumConfidence = $confidenceCounts.Medium
     LowConfidence = $confidenceCounts.Low
     NoConfidence = $confidenceCounts.None
     AuditFailures = $auditFailures.Count
-  } -Errors @($auditFailures)
+    ProtocolFailures = $protocolFailures.Count
+  } -Errors @(@($auditFailures) + @($protocolFailures))
 }

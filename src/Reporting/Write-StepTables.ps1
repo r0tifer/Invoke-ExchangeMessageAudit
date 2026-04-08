@@ -276,13 +276,15 @@ function Write-ImtStepDataTables {
               AttributionSource = $row.AttributionSource
               AttributionConfidence = $row.AttributionConfidence
               LikelyClient = $row.LikelyClient
+              ClientIPAddress = $row.ClientIPAddress
+              ProtocolEvidenceType = $row.ProtocolEvidenceType
               ClientMachineName = $row.ClientMachineName
               TransportClientHostname = $row.TransportClientHostname
             }
           }
         )
 
-        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Client attribution summary' -Rows $rows -Columns @('SubmittedAt','Subject','Recipients','AttributionSource','AttributionConfidence','LikelyClient','ClientMachineName','TransportClientHostname') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Client attribution summary' -Rows $rows -Columns @('SubmittedAt','Subject','Recipients','AttributionSource','AttributionConfidence','LikelyClient','ClientIPAddress','ProtocolEvidenceType','ClientMachineName','TransportClientHostname') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
           $hasDetails = $true
         }
       }

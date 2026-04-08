@@ -239,21 +239,31 @@ function Invoke-ExchangeMessageAudit {
 
       if ($runContext.Inputs.CorrelateClientAccess) {
         $clientAccessResult = Invoke-ImtStep -StepName 'MessageClientAccess' -Action {
-          Invoke-ImtMessageClientAccessAudit -RunContext $runContext -Results $trackingData.Results -CandidateMailboxAddresses $identityData.BaseTargetAddresses
+          Invoke-ImtMessageClientAccessAudit -RunContext $runContext -Results $trackingData.Results -CandidateMailboxAddresses $identityData.BaseTargetAddresses -Servers $topologyData.Servers
         }
-        $clientAccessData = $clientAccessResult.Data
+        $clientAccessRawData = $clientAccessResult.Data
+        $clientAccessData = [pscustomobject]@{
+          Rows = if ($clientAccessRawData.PSObject.Properties.Match('Rows').Count -gt 0) { @($clientAccessRawData.Rows) } else { @() }
+          AuditRows = if ($clientAccessRawData.PSObject.Properties.Match('AuditRows').Count -gt 0) { @($clientAccessRawData.AuditRows) } else { @() }
+          ProtocolRows = if ($clientAccessRawData.PSObject.Properties.Match('ProtocolRows').Count -gt 0) { @($clientAccessRawData.ProtocolRows) } else { @() }
+          AuditAvailable = if ($clientAccessRawData.PSObject.Properties.Match('AuditAvailable').Count -gt 0) { [bool]$clientAccessRawData.AuditAvailable } else { $false }
+          AuditFailures = if ($clientAccessRawData.PSObject.Properties.Match('AuditFailures').Count -gt 0) { @($clientAccessRawData.AuditFailures) } else { @() }
+          ProtocolFailures = if ($clientAccessRawData.PSObject.Properties.Match('ProtocolFailures').Count -gt 0) { @($clientAccessRawData.ProtocolFailures) } else { @() }
+        }
       } else {
         Add-ImtSkippedStep -StepName 'MessageClientAccess' -Summary 'Client access correlation not requested for this run.' | Out-Null
         $clientAccessData = [pscustomobject]@{
           Rows = @()
           AuditRows = @()
+          ProtocolRows = @()
           AuditAvailable = $false
           AuditFailures = @()
+          ProtocolFailures = @()
         }
       }
 
       $trackingReportResult = Invoke-ImtStep -StepName 'TrackingReport' -Action {
-        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses -ClientAttributionRows $clientAccessData.Rows -ClientAuditRows $clientAccessData.AuditRows
+        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses -ClientAttributionRows $clientAccessData.Rows -ClientAuditRows $clientAccessData.AuditRows -ClientProtocolRows $clientAccessData.ProtocolRows
       }
       $trackingReportData = $trackingReportResult.Data
 

@@ -142,7 +142,7 @@ Logs still capture everything regardless.
 | `-OutboundOnly` | `switch` | Restrict mailbox search/export logic to sent-item time windows only. |
 | `-DetailedMailboxEvidence` | `switch` | Copy matching items to an evidence mailbox and produce a consolidated message-level evidence CSV. |
 | `-EvidenceMailbox` | `string` | Target mailbox used to hold copied evidence items for `-DetailedMailboxEvidence`. |
-| `-CorrelateClientAccess` | `switch` | Correlate sent-message tracking results with mailbox audit details and transport client hints to identify likely sender device/client. |
+| `-CorrelateClientAccess` | `switch` | Correlate sent-message tracking results with mailbox audit details, Exchange front-end protocol logs, SMTP receive protocol logs, and transport client hints to identify the likely sender device/client. |
 | `-DisableTranscriptLog` | `switch` | Disable transcript logging (step logging behavior remains as implemented by logger settings). |
 | `-SearchDumpsterDirectly` | `switch` | Include dumpster when running direct mailbox estimate queries. |
 | `-ExpandExportScopeFromMatchedTraffic` | `switch` | Add matched sender/recipient traffic addresses to mailbox export target scope. |
@@ -188,6 +188,7 @@ Don’t move folders around unless you update the module root. It dot-sources `s
   - Search-MailboxAuditLog (if `-CorrelateClientAccess` is used)
   - Search-Mailbox (if used)
   - New-MailboxExportRequest (if used)
+- File-system access to Exchange front-end and SMTP protocol log paths if `-CorrelateClientAccess` is used for protocol-log fallback
 - Valid UNC path and permissions for PST exports
 
 If Exchange cmdlets aren’t available, certain features will skip or fail. That’s expected.
@@ -240,6 +241,8 @@ Invoke-ExchangeMessageAudit `
   -OutputDir "C:\Temp\ExchangeAudit" `
   -OutputLevel INFO
 ```
+
+When mailbox audit rows are unavailable, `-CorrelateClientAccess` now falls back to `HttpProxy` (`Mapi`, `Owa`, `Eas`, `Ews`) and `SmtpReceive` protocol logs and exports both `MTL_ClientAttribution_*.csv` and `MTL_ClientAttribution_Protocol_*.csv`.
 
 Preflight-only export validation:
 

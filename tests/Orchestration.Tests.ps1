@@ -175,13 +175,15 @@ Describe 'Invoke-ExchangeMessageAudit client access correlation' {
     }
     $script:ReportedClientRows = @()
     Mock Export-ImtTrackingReports {
-      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses, [object[]]$ClientAttributionRows, [object[]]$ClientAuditRows)
+      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses, [object[]]$ClientAttributionRows, [object[]]$ClientAuditRows, [object[]]$ClientProtocolRows)
       $script:ReportedClientRows = @($ClientAttributionRows)
       New-ImtModuleResult -StepName 'TrackingReport' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
         CsvMain = $null
         ClientAttributionCsv = $null
         ClientAuditCsv = $null
+        ClientProtocolCsv = $null
         ClientAttributionRows = @($ClientAttributionRows)
+        ClientProtocolRows = @($ClientProtocolRows)
         TrackingKeywordRows = @()
         TrackingKeywordMailboxRows = @()
         DailyCounts = @()

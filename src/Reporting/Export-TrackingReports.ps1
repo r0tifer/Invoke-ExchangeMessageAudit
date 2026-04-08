@@ -7,7 +7,8 @@ function Export-ImtTrackingReports {
     [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Results,
     [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses,
     [AllowEmptyCollection()][object[]]$ClientAttributionRows,
-    [AllowEmptyCollection()][object[]]$ClientAuditRows
+    [AllowEmptyCollection()][object[]]$ClientAuditRows,
+    [AllowEmptyCollection()][object[]]$ClientProtocolRows
   )
 
   if ($Results.Count -eq 0) {
@@ -15,7 +16,9 @@ function Export-ImtTrackingReports {
       CsvMain = $null
       ClientAttributionCsv = $null
       ClientAuditCsv = $null
+      ClientProtocolCsv = $null
       ClientAttributionRows = @()
+      ClientProtocolRows = @()
       TrackingKeywordRows = @()
       TrackingKeywordMailboxRows = @()
       DailyCounts = @()
@@ -51,6 +54,15 @@ function Export-ImtTrackingReports {
                     ItemSubject,ClientInfoString,ClientIPAddress,ClientMachineName,ClientProcessName,
                     ClientVersion,FolderPathName |
       Export-Csv -Path $clientAuditCsv -NoTypeInformation -Encoding UTF8
+  }
+
+  $clientProtocolCsv = $null
+  $clientProtocolRowSet = @($ClientProtocolRows)
+  if ($clientProtocolRowSet.Count -gt 0) {
+    $clientProtocolCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_Protocol_{0}.csv" -f $RunContext.Timestamp)
+    $clientProtocolRowSet |
+      Sort-Object Mailbox,Timestamp,EvidenceType |
+      Export-Csv -Path $clientProtocolCsv -NoTypeInformation -Encoding UTF8
   }
 
   $dailyCounts = @(
@@ -176,7 +188,9 @@ function Export-ImtTrackingReports {
     CsvMain = $csvMain
     ClientAttributionCsv = $clientAttributionCsv
     ClientAuditCsv = $clientAuditCsv
+    ClientProtocolCsv = $clientProtocolCsv
     ClientAttributionRows = @($clientAttributionRowSet)
+    ClientProtocolRows = @($clientProtocolRowSet)
     TrackingKeywordRows = @($trackingKeywordRows)
     TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows)
     DailyCounts = @($dailyCounts)
@@ -184,6 +198,7 @@ function Export-ImtTrackingReports {
     ResultCount = $Results.Count
     ClientAttributionRows = $clientAttributionRowSet.Count
     ClientAuditRows = $clientAuditRowSet.Count
+    ClientProtocolRows = $clientProtocolRowSet.Count
     TrackingKeywordRows = $trackingKeywordRows.Count
     TrackingKeywordMailboxRows = $trackingKeywordMailboxRows.Count
     DailyCounts = $dailyCounts.Count

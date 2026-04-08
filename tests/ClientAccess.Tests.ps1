@@ -87,6 +87,78 @@ Describe 'Invoke-ImtMessageClientAccessAudit' {
     @($result.Data.Rows)[0].LikelyClient | Should Be 'Outlook desktop'
     @($result.Data.Rows)[0].ClientMachineName | Should Be 'JPROGER-LT'
   }
+
+  It 'falls back to protocol logs when mailbox audit rows are unavailable' {
+    $runContext = [pscustomobject]@{
+      Start = [datetime]'2026-04-06T15:00:00'
+      End = [datetime]'2026-04-06T22:00:00'
+    }
+
+    Mock Resolve-ImtMailboxByAddress {
+      [pscustomobject]@{
+        Identity = 'jroger'
+        PrimarySmtpAddress = 'jeffrey.roger@arcticslope.org'
+        ExchangeGuid = '7f000a6b-7628-4c1c-8f74-daa11b39b3ab'
+      }
+    }
+
+    Mock Search-MailboxAuditLog { @() }
+
+    Mock Get-ImtProtocolEvidenceRowsForSenders {
+      [pscustomobject]@{
+        Rows = @(
+          [pscustomobject]@{
+            Mailbox = 'jeffrey.roger@arcticslope.org'
+            EvidenceType = 'HttpProxyMapi'
+            Server = 'EXCH-SE-01'
+            LogPath = 'C:\Logs\HttpProxy_2026040619-1.LOG'
+            Timestamp = [datetime]'2026-04-06T19:00:10'
+            Protocol = 'Mapi'
+            UrlStem = '/mapi/emsmdb/'
+            UserAgent = 'Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.10417; Pro)'
+            ClientIPAddress = '172.16.111.56'
+            AuthenticatedUser = 'jeffrey.roger@arcticslope.org'
+            AnchorMailbox = 'MailboxId=7f000a6b-7628-4c1c-8f74-daa11b39b3ab@arcticslope.org'
+            RemoteEndpoint = $null
+            SessionId = 'abc'
+            Event = $null
+            Data = 'Mapi'
+          }
+        )
+        Failures = @()
+      }
+    }
+
+    $results = @(
+      [pscustomobject]@{
+        Sender = 'Jeffrey.Roger@arcticslope.org'
+        Recipients = @('Susan.Miklavcic@arcticslope.org')
+        MessageSubject = 'Resignation from medical Staff'
+        MessageId = '<msg-01@example.org>'
+        InternalMessageId = '101'
+        EventId = 'SUBMIT'
+        Timestamp = [datetime]'2026-04-06T19:00:15'
+        ServerHostname = 'EXCH-SE-02'
+        Source = 'SMTP'
+        ClientHostname = 'EXCH-SE-02'
+        ConnectorId = 'InboundProxy'
+        SourceContext = 'MDB:01'
+      }
+    )
+
+    $result = Invoke-ImtMessageClientAccessAudit `
+      -RunContext $runContext `
+      -Results $results `
+      -CandidateMailboxAddresses @('jeffrey.roger@arcticslope.org') `
+      -Servers @('EXCH-SE-01', 'EXCH-SE-02')
+
+    $result.Status | Should Be 'OK'
+    @($result.Data.Rows).Count | Should Be 1
+    @($result.Data.Rows)[0].AttributionSource | Should Be 'ProtocolLog'
+    @($result.Data.Rows)[0].LikelyClient | Should Be 'Outlook desktop'
+    @($result.Data.Rows)[0].ClientIPAddress | Should Be '172.16.111.56'
+    @($result.Data.Rows)[0].ProtocolEvidenceType | Should Be 'HttpProxyMapi'
+  }
 }
 
 Describe 'Get-ImtMailboxAuditQueryParameters' {
@@ -128,6 +200,41 @@ Describe 'Get-ImtMailboxAuditQueryParameters' {
       -EndDate ([datetime]'2026-04-06T22:00:00')
 
     $params.ResultSize | Should Be 250000
+  }
+}
+
+Describe 'Get-ImtProtocolCandidateFiles' {
+  BeforeEach {
+    Mock Test-ImtLiteralPathExists { $true }
+  }
+
+  It 'queries token-filtered file sets and de-duplicates overlapping results' {
+    Mock Get-ChildItem {
+      param($LiteralPath, $File, $Filter)
+
+      switch ($Filter) {
+        '*2026040619*' {
+          @([pscustomobject]@{ FullName = 'C:\Logs\HttpProxy_2026040619-1.LOG' })
+          break
+        }
+        '*2026040620*' {
+          @(
+            [pscustomobject]@{ FullName = 'C:\Logs\HttpProxy_2026040619-1.LOG' }
+            [pscustomobject]@{ FullName = 'C:\Logs\HttpProxy_2026040620-1.LOG' }
+          )
+          break
+        }
+        default { @() }
+      }
+    }
+
+    $files = @(Get-ImtProtocolCandidateFiles -DirectoryPath 'C:\Logs' -Tokens @('2026040619', '2026040620'))
+
+    $files.Count | Should Be 2
+    $files[0] | Should Be 'C:\Logs\HttpProxy_2026040619-1.LOG'
+    $files[1] | Should Be 'C:\Logs\HttpProxy_2026040620-1.LOG'
+    Assert-MockCalled Get-ChildItem -Times 1 -ParameterFilter { $Filter -eq '*2026040619*' }
+    Assert-MockCalled Get-ChildItem -Times 1 -ParameterFilter { $Filter -eq '*2026040620*' }
   }
 }
 
