@@ -159,6 +159,62 @@ Describe 'Invoke-ImtMessageClientAccessAudit' {
     @($result.Data.Rows)[0].ClientIPAddress | Should Be '172.16.111.56'
     @($result.Data.Rows)[0].ProtocolEvidenceType | Should Be 'HttpProxyMapi'
   }
+
+  It 'uses tracking source context when mailbox audit and protocol logs are unavailable' {
+    $runContext = [pscustomobject]@{
+      Start = [datetime]'2026-04-06T15:00:00'
+      End = [datetime]'2026-04-06T22:00:00'
+    }
+
+    Mock Resolve-ImtMailboxByAddress {
+      [pscustomobject]@{
+        Identity = 'jroger'
+        PrimarySmtpAddress = 'jeffrey.roger@arcticslope.org'
+        ExchangeGuid = '1320642c-99cb-4a3f-bd0c-240948aebd03'
+      }
+    }
+
+    Mock Search-MailboxAuditLog { @() }
+
+    Mock Get-ImtProtocolEvidenceRowsForSenders {
+      [pscustomobject]@{
+        Rows = @()
+        Failures = @()
+      }
+    }
+
+    $results = @(
+      [pscustomobject]@{
+        Sender = 'Jeffrey.Roger@arcticslope.org'
+        Recipients = @('Susan.Miklavcic@arcticslope.org')
+        MessageSubject = 'Resignation from medical Staff'
+        MessageId = '<msg-01@example.org>'
+        InternalMessageId = '101'
+        EventId = 'SUBMIT'
+        Timestamp = [datetime]'2026-04-06T19:00:15'
+        ServerHostname = 'EXCH-SE-03.asna.alaska.ihs.gov'
+        Source = 'STOREDRIVER'
+        ClientHostname = 'EXCH-SE-02'
+        ClientIp = '172.16.2.16'
+        ConnectorId = $null
+        SourceContext = 'MDB:f4f3423e-3ce8-4dd2-a4de-5a5b79f23b63, Mailbox:1320642c-99cb-4a3f-bd0c-240948aebd03, Event:28662855, MessageClass:IPM.Note, CreationTime:2026-04-07T03:00:15.485Z, ClientType:AirSync, SubmissionAssistant:MailboxTransportSubmissionEmailAssistant'
+      }
+    )
+
+    $result = Invoke-ImtMessageClientAccessAudit `
+      -RunContext $runContext `
+      -Results $results `
+      -CandidateMailboxAddresses @('jeffrey.roger@arcticslope.org') `
+      -Servers @('EXCH-SE-01', 'EXCH-SE-02', 'EXCH-SE-03')
+
+    $result.Status | Should Be 'OK'
+    @($result.Data.Rows).Count | Should Be 1
+    @($result.Data.Rows)[0].AttributionSource | Should Be 'TrackingSourceContext'
+    @($result.Data.Rows)[0].AttributionConfidence | Should Be 'Medium'
+    @($result.Data.Rows)[0].LikelyClient | Should Be 'Mobile client via ActiveSync'
+    @($result.Data.Rows)[0].ClientInfoString | Should Match 'ClientType=AirSync'
+    @($result.Data.Rows)[0].ClientIPAddress | Should Be '172.16.2.16'
+  }
 }
 
 Describe 'Get-ImtMailboxAuditQueryParameters' {

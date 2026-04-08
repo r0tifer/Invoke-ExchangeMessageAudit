@@ -154,6 +154,8 @@ function Get-ImtTrackingTrailHints {
   $sources = New-Object System.Collections.Generic.List[string]
   $sourceContexts = New-Object System.Collections.Generic.List[string]
   $serverNames = New-Object System.Collections.Generic.List[string]
+  $clientTypes = New-Object System.Collections.Generic.List[string]
+  $submissionAssistants = New-Object System.Collections.Generic.List[string]
 
   foreach ($row in @($Rows)) {
     $clientHostname = Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'ClientHostname'
@@ -178,7 +180,22 @@ function Get-ImtTrackingTrailHints {
 
     $sourceContext = Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'SourceContext'
     if (-not [string]::IsNullOrWhiteSpace(($sourceContext -as [string]))) {
-      [void]$sourceContexts.Add($sourceContext.ToString().Trim())
+      $normalizedSourceContext = $sourceContext.ToString().Trim()
+      [void]$sourceContexts.Add($normalizedSourceContext)
+
+      foreach ($match in @([regex]::Matches($normalizedSourceContext, '(?i)(?:^|[,;]\s*)ClientType:(?<Value>[^,;]+)'))) {
+        $value = ($match.Groups['Value'].Value -as [string])
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+          [void]$clientTypes.Add($value.Trim())
+        }
+      }
+
+      foreach ($match in @([regex]::Matches($normalizedSourceContext, '(?i)(?:^|[,;]\s*)SubmissionAssistant:(?<Value>[^,;]+)'))) {
+        $value = ($match.Groups['Value'].Value -as [string])
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+          [void]$submissionAssistants.Add($value.Trim())
+        }
+      }
     }
 
     $serverName = Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'ServerHostname'
@@ -193,6 +210,8 @@ function Get-ImtTrackingTrailHints {
     ConnectorIds = Join-ImtTrackingDistinctValues -Values $connectorIds.ToArray()
     Sources = Join-ImtTrackingDistinctValues -Values $sources.ToArray()
     SourceContextSample = Join-ImtTrackingDistinctValues -Values (@($sourceContexts.ToArray()) | Select-Object -First 3)
+    TrackingClientType = Join-ImtTrackingDistinctValues -Values $clientTypes.ToArray()
+    SubmissionAssistant = Join-ImtTrackingDistinctValues -Values $submissionAssistants.ToArray()
     ServerHostnames = Join-ImtTrackingDistinctValues -Values $serverNames.ToArray()
   }
 }
@@ -323,13 +342,27 @@ function Resolve-ImtTrackingLikelyClient {
   param(
     [string]$ClientInfoString,
     [string]$ClientProcessName,
+    [string]$TrackingClientType,
     [string]$ClientHostname
   )
 
   $clientInfo = if ($ClientInfoString) { $ClientInfoString.Trim() } else { '' }
   $processName = if ($ClientProcessName) { $ClientProcessName.Trim() } else { '' }
+  $trackingClientTypeValue = if ($TrackingClientType) { $TrackingClientType.Trim() } else { '' }
 
   if ($processName -match '^OUTLOOK\.EXE$') {
+    return 'Outlook desktop'
+  }
+
+  if ($trackingClientTypeValue -match '(?i)activesync|airsync') {
+    return 'Mobile client via ActiveSync'
+  }
+
+  if ($trackingClientTypeValue -match '(?i)owa') {
+    return 'Outlook on the web'
+  }
+
+  if ($trackingClientTypeValue -match '(?i)mapi|rpc|outlook') {
     return 'Outlook desktop'
   }
 
@@ -361,6 +394,9 @@ function Resolve-ImtTrackingDeviceAssessment {
     [pscustomobject]$TrailHints
   )
 
+  $trailTrackingClientType = (Get-ImtTrackingPropertyValue -InputObject $TrailHints -PropertyName 'TrackingClientType') -as [string]
+  $trailSubmissionAssistant = (Get-ImtTrackingPropertyValue -InputObject $TrailHints -PropertyName 'SubmissionAssistant') -as [string]
+
   if ($AuditMatch) {
     $auditRow = $AuditMatch.Row
     $clientInfoString = (Get-ImtTrackingPropertyValue -InputObject $auditRow -PropertyName 'ClientInfoString') -as [string]
@@ -372,7 +408,7 @@ function Resolve-ImtTrackingDeviceAssessment {
     return [pscustomobject]@{
       AttributionSource = 'MailboxAudit'
       AttributionConfidence = $AuditMatch.Confidence
-      LikelyClient = Resolve-ImtTrackingLikelyClient -ClientInfoString $clientInfoString -ClientProcessName $clientProcessName -ClientHostname $TrailHints.ClientHostname
+      LikelyClient = Resolve-ImtTrackingLikelyClient -ClientInfoString $clientInfoString -ClientProcessName $clientProcessName -TrackingClientType $trailTrackingClientType -ClientHostname $TrailHints.ClientHostname
       ClientInfoString = $clientInfoString
       ClientProcessName = $clientProcessName
       ClientMachineName = $clientMachineName
@@ -413,7 +449,7 @@ function Resolve-ImtTrackingDeviceAssessment {
         break
       }
       default {
-        Resolve-ImtTrackingLikelyClient -ClientInfoString $userAgent -ClientProcessName $null -ClientHostname $TrailHints.ClientHostname
+        Resolve-ImtTrackingLikelyClient -ClientInfoString $userAgent -ClientProcessName $null -TrackingClientType $trailTrackingClientType -ClientHostname $TrailHints.ClientHostname
       }
     }
 
@@ -439,11 +475,43 @@ function Resolve-ImtTrackingDeviceAssessment {
     }
   }
 
+  if (-not [string]::IsNullOrWhiteSpace($trailTrackingClientType)) {
+    $clientType = $trailTrackingClientType
+    $submissionAssistant = $trailSubmissionAssistant
+    $evidenceNote = 'Derived from message tracking SourceContext.'
+    if (-not [string]::IsNullOrWhiteSpace($submissionAssistant)) {
+      $evidenceNote = ('Derived from message tracking SourceContext (ClientType={0}; SubmissionAssistant={1}).' -f $clientType, $submissionAssistant)
+    } else {
+      $evidenceNote = ('Derived from message tracking SourceContext (ClientType={0}).' -f $clientType)
+    }
+
+    return [pscustomobject]@{
+      AttributionSource = 'TrackingSourceContext'
+      AttributionConfidence = 'Medium'
+      LikelyClient = Resolve-ImtTrackingLikelyClient -ClientInfoString $null -ClientProcessName $null -TrackingClientType $clientType -ClientHostname $TrailHints.ClientHostname
+      ClientInfoString = if (-not [string]::IsNullOrWhiteSpace($submissionAssistant)) { ('ClientType={0}; SubmissionAssistant={1}' -f $clientType, $submissionAssistant) } else { ('ClientType={0}' -f $clientType) }
+      ClientProcessName = $null
+      ClientMachineName = $null
+      ClientVersion = $null
+      ClientIPAddress = $TrailHints.ClientIPAddress
+      TransportClientHostname = $TrailHints.ClientHostname
+      TransportClientIPAddress = $TrailHints.ClientIPAddress
+      ProtocolEvidenceType = $null
+      ProtocolLogServer = $null
+      ProtocolLogPath = $null
+      ProtocolUserAgent = $null
+      ProtocolRemoteEndpoint = $null
+      ProtocolTimestamp = $null
+      ProtocolDeltaMinutes = $null
+      EvidenceNote = $evidenceNote
+    }
+  }
+
   if (-not [string]::IsNullOrWhiteSpace($TrailHints.ClientHostname) -or -not [string]::IsNullOrWhiteSpace($TrailHints.ClientIPAddress)) {
     return [pscustomobject]@{
       AttributionSource = 'Transport'
       AttributionConfidence = 'Low'
-      LikelyClient = Resolve-ImtTrackingLikelyClient -ClientInfoString $null -ClientProcessName $null -ClientHostname $TrailHints.ClientHostname
+      LikelyClient = Resolve-ImtTrackingLikelyClient -ClientInfoString $null -ClientProcessName $null -TrackingClientType $trailTrackingClientType -ClientHostname $TrailHints.ClientHostname
       ClientInfoString = $null
       ClientProcessName = $null
       ClientMachineName = $null
