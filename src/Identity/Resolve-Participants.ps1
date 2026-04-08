@@ -298,18 +298,20 @@ function Resolve-ImtParticipantsAndSenders {
     }
   }
 
-  $baseTargetAddresses = Get-ImtTargetAddressSet -RunContext $RunContext -ResolvedParticipants $resolvedParticipants -TraceParticipants $traceParticipants -EffectiveSenderFilters $effectiveSenderFilters
+  $baseTargetAddresses = @(
+    Get-ImtTargetAddressSet -RunContext $RunContext -ResolvedParticipants $resolvedParticipants -TraceParticipants $traceParticipants -EffectiveSenderFilters $effectiveSenderFilters
+  )
 
-  $summary = "Participants={0}; TraceParticipants={1}; SenderFilters={2}; BaseTargets={3}" -f $resolvedParticipants.Count, $traceParticipants.Count, $effectiveSenderFilters.Count, $baseTargetAddresses.Count
+  $summary = "Participants={0}; TraceParticipants={1}; SenderFilters={2}; BaseTargets={3}" -f @($resolvedParticipants).Count, @($traceParticipants).Count, @($effectiveSenderFilters).Count, @($baseTargetAddresses).Count
   New-ImtModuleResult -StepName 'ResolveIdentities' -Status 'OK' -Summary $summary -Data ([pscustomobject]@{
     ResolvedParticipants = @($resolvedParticipants)
     TraceParticipants = @($traceParticipants)
     EffectiveSenderFilters = @($effectiveSenderFilters)
     BaseTargetAddresses = @($baseTargetAddresses)
   }) -Metrics @{
-    ResolvedParticipants = $resolvedParticipants.Count
-    TraceParticipants = $traceParticipants.Count
-    EffectiveSenderFilters = $effectiveSenderFilters.Count
-    BaseTargetAddresses = $baseTargetAddresses.Count
+    ResolvedParticipants = @($resolvedParticipants).Count
+    TraceParticipants = @($traceParticipants).Count
+    EffectiveSenderFilters = @($effectiveSenderFilters).Count
+    BaseTargetAddresses = @($baseTargetAddresses).Count
   } -Errors @()
 }
