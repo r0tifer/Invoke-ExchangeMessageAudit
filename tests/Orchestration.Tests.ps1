@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
+$testTempRoot = [System.IO.Path]::GetTempPath()
 . (Join-Path $repoRoot 'src\Models\New-ResultObjects.ps1')
 . (Join-Path $repoRoot 'src\Logging\Write-ImtLog.ps1')
 . (Join-Path $repoRoot 'src\Core\Initialize-RunContext.ps1')
@@ -10,6 +11,7 @@ function Test-ImtRunInputs { }
 function Resolve-ImtParticipantsAndSenders { }
 function Get-ImtTransportTopology { }
 function Invoke-ImtMessageTrackingAudit { }
+function Invoke-ImtMessageClientAccessAudit { }
 function Export-ImtTrackingReports { }
 function Invoke-ImtDirectMailboxSearch { }
 function Export-ImtMailboxEvidenceReports { }
@@ -88,7 +90,7 @@ Describe 'Invoke-ExchangeMessageAudit export targeting' {
   }
 
   It 'exports only matched source mailboxes when direct mailbox search identifies hits' {
-    $tempDir = Join-Path $env:TEMP ("imt-orch-tests-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $tempDir = Join-Path $testTempRoot ("imt-orch-tests-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $tempDir | Out-Null
 
     try {
@@ -107,6 +109,132 @@ Describe 'Invoke-ExchangeMessageAudit export targeting' {
 
       @($script:ExportTargetAddresses).Count | Should Be 1
       $script:ExportTargetAddresses[0] | Should Be 'rachel.aumavae@example.org'
+    } finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Describe 'Invoke-ExchangeMessageAudit client access correlation' {
+  BeforeEach {
+    Mock Initialize-ImtLogger {}
+    Mock Complete-ImtLogger {}
+    Mock Write-ImtLog {}
+    Mock Write-ImtStepDataTables {}
+    Mock Test-ImtRunInputs {
+      New-ImtModuleResult -StepName 'ValidateInputs' -Status 'OK' -Summary 'ok' -Data $null -Metrics @{} -Errors @()
+    }
+    Mock Resolve-ImtParticipantsAndSenders {
+      New-ImtModuleResult -StepName 'ResolveIdentities' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        ResolvedParticipants = @()
+        TraceParticipants = @()
+        EffectiveSenderFilters = @('jproger@arcticslope.org')
+        BaseTargetAddresses = @('jproger@arcticslope.org')
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Get-ImtTransportTopology {
+      New-ImtModuleResult -StepName 'DiscoverTransport' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        Servers = @('EXCH-01')
+        VersionInfo = @{ 'EXCH-01' = 'Exchange 2019' }
+        TransportTargets = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtMessageTrackingAudit {
+      New-ImtModuleResult -StepName 'MessageTrackingQuery' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        Results = @(
+          [pscustomobject]@{
+            Sender = 'jproger@arcticslope.org'
+            Recipients = @('target@example.org')
+            MessageSubject = 'Quarterly update'
+            MessageId = '<msg-01@example.org>'
+            InternalMessageId = '101'
+            EventId = 'SUBMIT'
+            Timestamp = [datetime]'2026-04-06T15:31:00'
+            ServerHostname = 'EXCH-01'
+          }
+        )
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtMessageClientAccessAudit {
+      New-ImtModuleResult -StepName 'MessageClientAccess' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        Rows = @(
+          [pscustomobject]@{
+            Mailbox = 'jproger@arcticslope.org'
+            SubmittedAt = [datetime]'2026-04-06T15:31:00'
+            Subject = 'Quarterly update'
+            Recipients = 'target@example.org'
+            AttributionSource = 'MailboxAudit'
+            AttributionConfidence = 'High'
+            LikelyClient = 'Outlook desktop'
+            ClientMachineName = 'JPROGER-LT'
+            TransportClientHostname = $null
+          }
+        )
+        AuditRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    $script:ReportedClientRows = @()
+    Mock Export-ImtTrackingReports {
+      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses, [object[]]$ClientAttributionRows, [object[]]$ClientAuditRows)
+      $script:ReportedClientRows = @($ClientAttributionRows)
+      New-ImtModuleResult -StepName 'TrackingReport' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        CsvMain = $null
+        ClientAttributionCsv = $null
+        ClientAuditCsv = $null
+        ClientAttributionRows = @($ClientAttributionRows)
+        TrackingKeywordRows = @()
+        TrackingKeywordMailboxRows = @()
+        DailyCounts = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtDirectMailboxSearch {
+      New-ImtModuleResult -StepName 'DirectMailboxSearch' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
+        DirectKeywordRows = @()
+        MatchedSourceMailboxAddresses = @()
+        EvidenceRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Export-ImtMailboxEvidenceReports {
+      New-ImtModuleResult -StepName 'MailboxEvidence' -Status 'SKIP' -Summary 'no evidence' -Data ([pscustomobject]@{
+        EvidenceRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Export-ImtCombinedKeywordReports {
+      New-ImtModuleResult -StepName 'KeywordCombined' -Status 'SKIP' -Summary 'skip' -Data ([pscustomobject]@{
+        CombinedByMailboxRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+    Mock Invoke-ImtMessageTrailTrace {
+      New-ImtModuleResult -StepName 'MessageTrailTrace' -Status 'SKIP' -Summary 'skip' -Data ([pscustomobject]@{}) -Metrics @{} -Errors @()
+    }
+    Mock Write-ImtRunSummary {
+      New-ImtModuleResult -StepName 'RunSummary' -Status 'OK' -Summary 'summary' -Data ([pscustomobject]@{
+        TotalSteps = 1
+        Counts = [pscustomobject]@{ OK = 1; WARN = 0; FAIL = 0; SKIP = 0 }
+        DurationSeconds = 1
+        StepOutcomes = @()
+        FinalKeywordByMailboxRows = @()
+      }) -Metrics @{} -Errors @()
+    }
+  }
+
+  It 'passes client attribution rows into tracking reporting when requested' {
+    $tempDir = Join-Path $testTempRoot ("imt-orch-client-access-{0}" -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+    try {
+      $null = Invoke-ExchangeMessageAudit `
+        -Sender 'jproger@arcticslope.org' `
+        -StartDate '2026-04-06T15:00:00' `
+        -EndDate '2026-04-06T22:00:00' `
+        -CorrelateClientAccess `
+        -SkipRetentionCheck `
+        -DisableTranscriptLog `
+        -OutputDir $tempDir `
+        -OutputLevel INFO
+
+      @($script:ReportedClientRows).Count | Should Be 1
+      $script:ReportedClientRows[0].ClientMachineName | Should Be 'JPROGER-LT'
     } finally {
       Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -184,7 +312,7 @@ Describe 'Invoke-ExchangeMessageAudit empty tracking path' {
   }
 
   It 'does not fail when tracking returns zero rows' {
-    $tempDir = Join-Path $env:TEMP ("imt-orch-empty-tracking-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $tempDir = Join-Path $testTempRoot ("imt-orch-empty-tracking-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $tempDir | Out-Null
 
     try {

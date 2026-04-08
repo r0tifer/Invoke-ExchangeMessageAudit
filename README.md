@@ -31,6 +31,7 @@ It orchestrates:
 - Identity resolution (participants, senders, mailbox validation)
 - Transport topology discovery
 - Message tracking queries with filtering
+- Optional mailbox-audit correlation for client/device attribution
 - Keyword-based audit logic
 - Optional mailbox search estimates
 - Optional export preflight checks
@@ -81,6 +82,7 @@ Every run generates structured artifacts. Not just console noise.
 Depending on options used, you’ll get:
 
 - Primary message tracking CSV
+- Optional client attribution CSV
 - Keyword summaries (overall + per mailbox)
 - Direct mailbox search exports
 - Retention snapshot CSV
@@ -140,6 +142,7 @@ Logs still capture everything regardless.
 | `-OutboundOnly` | `switch` | Restrict mailbox search/export logic to sent-item time windows only. |
 | `-DetailedMailboxEvidence` | `switch` | Copy matching items to an evidence mailbox and produce a consolidated message-level evidence CSV. |
 | `-EvidenceMailbox` | `string` | Target mailbox used to hold copied evidence items for `-DetailedMailboxEvidence`. |
+| `-CorrelateClientAccess` | `switch` | Correlate sent-message tracking results with mailbox audit details and transport client hints to identify likely sender device/client. |
 | `-DisableTranscriptLog` | `switch` | Disable transcript logging (step logging behavior remains as implemented by logger settings). |
 | `-SearchDumpsterDirectly` | `switch` | Include dumpster when running direct mailbox estimate queries. |
 | `-ExpandExportScopeFromMatchedTraffic` | `switch` | Add matched sender/recipient traffic addresses to mailbox export target scope. |
@@ -182,6 +185,7 @@ Don’t move folders around unless you update the module root. It dot-sources `s
   - Get-MessageTrackingLog
   - Get-Recipient
   - Get-Mailbox
+  - Search-MailboxAuditLog (if `-CorrelateClientAccess` is used)
   - Search-Mailbox (if used)
   - New-MailboxExportRequest (if used)
 - Valid UNC path and permissions for PST exports
@@ -221,6 +225,18 @@ Invoke-ExchangeMessageAudit `
   -StartDate "2026-01-01 00:00:00" `
   -EndDate "2026-01-31 23:59:59" `
   -OnlyProblems `
+  -OutputDir "C:\Temp\ExchangeAudit" `
+  -OutputLevel INFO
+```
+
+Explicit sent-mail audit with client/device correlation:
+
+```powershell
+Invoke-ExchangeMessageAudit `
+  -Sender "jproger@arcticslope.org" `
+  -StartDate "2026-04-06 15:00:00" `
+  -EndDate "2026-04-06 22:00:00" `
+  -CorrelateClientAccess `
   -OutputDir "C:\Temp\ExchangeAudit" `
   -OutputLevel INFO
 ```

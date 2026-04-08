@@ -34,6 +34,7 @@ param(
   [switch]$OutboundOnly,
   [switch]$DetailedMailboxEvidence,
   [string]$EvidenceMailbox,
+  [switch]$CorrelateClientAccess,
   [switch]$DisableTranscriptLog,
   [switch]$SearchDumpsterDirectly,
   [switch]$ExpandExportScopeFromMatchedTraffic,

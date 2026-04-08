@@ -32,6 +32,7 @@ Export Parameters
 -OutboundOnly
 -DetailedMailboxEvidence
 -EvidenceMailbox <string>
+-CorrelateClientAccess
 
 Examples
 --------
@@ -75,6 +76,7 @@ function Invoke-ExchangeMessageAudit {
     [switch]$OutboundOnly,
     [switch]$DetailedMailboxEvidence,
     [string]$EvidenceMailbox,
+    [switch]$CorrelateClientAccess,
     [switch]$DisableTranscriptLog,
     [switch]$SearchDumpsterDirectly,
     [switch]$ExpandExportScopeFromMatchedTraffic,
@@ -116,6 +118,7 @@ function Invoke-ExchangeMessageAudit {
     -OutboundOnly:$OutboundOnly `
     -DetailedMailboxEvidence:$DetailedMailboxEvidence `
     -EvidenceMailbox $EvidenceMailbox `
+    -CorrelateClientAccess:$CorrelateClientAccess `
     -DisableTranscriptLog:$DisableTranscriptLog `
     -SearchDumpsterDirectly:$SearchDumpsterDirectly `
     -ExpandExportScopeFromMatchedTraffic:$ExpandExportScopeFromMatchedTraffic `
@@ -130,6 +133,7 @@ function Invoke-ExchangeMessageAudit {
   $topologyData = $null
   $retentionData = $null
   $trackingData = $null
+  $clientAccessData = $null
   $trackingReportData = $null
   $directSearchData = $null
   $mailboxEvidenceData = $null
@@ -211,6 +215,7 @@ function Invoke-ExchangeMessageAudit {
 
       Add-ImtSkippedStep -StepName 'MessageTrackingQuery' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'TrackingReport' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
+      Add-ImtSkippedStep -StepName 'MessageClientAccess' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'MailboxExport' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'DirectMailboxSearch' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
       Add-ImtSkippedStep -StepName 'MailboxEvidence' -Summary 'Skipped because PreflightOnly mode is enabled.' | Out-Null
@@ -232,8 +237,23 @@ function Invoke-ExchangeMessageAudit {
       }
       $trackingData = $trackingResult.Data
 
+      if ($runContext.Inputs.CorrelateClientAccess) {
+        $clientAccessResult = Invoke-ImtStep -StepName 'MessageClientAccess' -Action {
+          Invoke-ImtMessageClientAccessAudit -RunContext $runContext -Results $trackingData.Results -CandidateMailboxAddresses $identityData.BaseTargetAddresses
+        }
+        $clientAccessData = $clientAccessResult.Data
+      } else {
+        Add-ImtSkippedStep -StepName 'MessageClientAccess' -Summary 'Client access correlation not requested for this run.' | Out-Null
+        $clientAccessData = [pscustomobject]@{
+          Rows = @()
+          AuditRows = @()
+          AuditAvailable = $false
+          AuditFailures = @()
+        }
+      }
+
       $trackingReportResult = Invoke-ImtStep -StepName 'TrackingReport' -Action {
-        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses
+        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses -ClientAttributionRows $clientAccessData.Rows -ClientAuditRows $clientAccessData.AuditRows
       }
       $trackingReportData = $trackingReportResult.Data
 

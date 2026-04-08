@@ -9,6 +9,7 @@ $sourceFiles = @(
   'src\Exchange\Get-TransportTopology.ps1'
   'src\Exchange\Get-RetentionSnapshot.ps1'
   'src\Tracking\Invoke-MessageTrackingAudit.ps1'
+  'src\Tracking\Invoke-MessageClientAccessAudit.ps1'
   'src\Reporting\Export-TrackingReports.ps1'
   'src\Export\Test-ExportPrerequisites.ps1'
   'src\Export\Invoke-MailboxExportRequests.ps1'

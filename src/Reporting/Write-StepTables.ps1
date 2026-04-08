@@ -264,6 +264,30 @@ function Write-ImtStepDataTables {
       }
     }
 
+    'MessageClientAccess' {
+      if ($data -and $data.Rows) {
+        $rows = @(
+          foreach ($row in @($data.Rows | Sort-Object Mailbox,SubmittedAt,Subject)) {
+            [pscustomobject]@{
+              Mailbox = $row.Mailbox
+              SubmittedAt = $row.SubmittedAt
+              Subject = $row.Subject
+              Recipients = $row.Recipients
+              AttributionSource = $row.AttributionSource
+              AttributionConfidence = $row.AttributionConfidence
+              LikelyClient = $row.LikelyClient
+              ClientMachineName = $row.ClientMachineName
+              TransportClientHostname = $row.TransportClientHostname
+            }
+          }
+        )
+
+        if (Write-ImtMailboxGroupedTables -StepName $stepName -Title 'Client attribution summary' -Rows $rows -Columns @('SubmittedAt','Subject','Recipients','AttributionSource','AttributionConfidence','LikelyClient','ClientMachineName','TransportClientHostname') -MailboxProperty 'Mailbox' -MaxRows $MaxRows) {
+          $hasDetails = $true
+        }
+      }
+    }
+
     'TrackingReport' {
       if ($data -and $data.TrackingKeywordRows) {
         $rows = @(

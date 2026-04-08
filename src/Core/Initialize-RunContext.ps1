@@ -32,11 +32,16 @@ function Initialize-ImtRunContext {
     [switch]$OutboundOnly,
     [switch]$DetailedMailboxEvidence,
     [string]$EvidenceMailbox,
+    [switch]$CorrelateClientAccess,
     [switch]$DisableTranscriptLog,
     [switch]$SearchDumpsterDirectly,
     [switch]$ExpandExportScopeFromMatchedTraffic,
     [ValidateSet('DEBUG','INFO','WARN','ERROR','CRITICAL')][string]$OutputLevel = 'INFO'
   )
+
+  if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = [System.IO.Path]::GetTempPath()
+  }
 
   if (-not (Test-Path -LiteralPath $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
@@ -147,6 +152,7 @@ function Initialize-ImtRunContext {
       OutboundOnly = [bool]$OutboundOnly
       DetailedMailboxEvidence = [bool]$DetailedMailboxEvidence
       EvidenceMailbox = $EvidenceMailbox
+      CorrelateClientAccess = [bool]$CorrelateClientAccess
       DisableTranscriptLog = [bool]$DisableTranscriptLog
       SearchDumpsterDirectly = [bool]$SearchDumpsterDirectly
       ExpandExportScopeFromMatchedTraffic = [bool]$ExpandExportScopeFromMatchedTraffic

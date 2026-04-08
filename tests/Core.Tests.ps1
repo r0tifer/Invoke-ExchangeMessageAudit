@@ -1,6 +1,7 @@
 ﻿Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
+$testTempRoot = [System.IO.Path]::GetTempPath()
 . (Join-Path $repoRoot 'src\\Models\\New-ResultObjects.ps1')
 . (Join-Path $repoRoot 'src\\Core\\Initialize-RunContext.ps1')
 . (Join-Path $repoRoot 'src\\Core\\Test-RunInputs.ps1')
@@ -17,28 +18,28 @@ Describe 'New-ImtModuleResult' {
 
 Describe 'Test-ImtRunInputs' {
   It 'throws when no participant/sender/recipient target is provided' {
-    $ctx = Initialize-ImtRunContext -DaysBack 7 -OutputDir $env:TEMP -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -DaysBack 7 -OutputDir $testTempRoot -OutputLevel INFO
     { Test-ImtRunInputs -RunContext $ctx } | Should Throw
   }
 
   It 'throws when export is requested without ExportPstRoot' {
-    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $env:TEMP -ExportLocatedEmails -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $testTempRoot -ExportLocatedEmails -OutputLevel INFO
     { Test-ImtRunInputs -RunContext $ctx } | Should Throw
   }
 
   It 'throws when ExportPstRoot is not UNC' {
-    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $env:TEMP -ExportPstRoot 'C:\Exports' -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $testTempRoot -ExportPstRoot 'C:\Exports' -OutputLevel INFO
     { Test-ImtRunInputs -RunContext $ctx } | Should Throw
   }
 
   It 'returns OK for valid minimal participant run' {
-    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $env:TEMP -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Participants 'user@example.org' -DaysBack 7 -OutputDir $testTempRoot -OutputLevel INFO
     $result = Test-ImtRunInputs -RunContext $ctx
     $result.Status | Should Be 'OK'
   }
 
   It 'normalizes Recipient and Recipients into one recipient list' {
-    $ctx = Initialize-ImtRunContext -Recipient 'one@example.org' -Recipients @('two@example.org', 'one@example.org') -DaysBack 7 -OutputDir $env:TEMP -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Recipient 'one@example.org' -Recipients @('two@example.org', 'one@example.org') -DaysBack 7 -OutputDir $testTempRoot -OutputLevel INFO
     @($ctx.Inputs.Recipients).Count | Should Be 2
     $ctx.Inputs.Recipient | Should Be 'one@example.org'
     @($ctx.Inputs.Recipients) -contains 'one@example.org' | Should Be $true
@@ -46,19 +47,24 @@ Describe 'Test-ImtRunInputs' {
   }
 
   It 'throws when detailed mailbox evidence is requested without EvidenceMailbox' {
-    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $env:TEMP -DetailedMailboxEvidence -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $testTempRoot -DetailedMailboxEvidence -OutputLevel INFO
     { Test-ImtRunInputs -RunContext $ctx } | Should Throw
   }
 
   It 'throws when SearchAllMailboxes and SourceMailboxes are combined' {
-    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $env:TEMP -SearchAllMailboxes -SourceMailboxes 'user@example.org' -OutputLevel INFO
+    $ctx = Initialize-ImtRunContext -Recipients 'target@example.org' -DaysBack 7 -OutputDir $testTempRoot -SearchAllMailboxes -SourceMailboxes 'user@example.org' -OutputLevel INFO
     { Test-ImtRunInputs -RunContext $ctx } | Should Throw
+  }
+
+  It 'stores CorrelateClientAccess in the run context inputs' {
+    $ctx = Initialize-ImtRunContext -SenderAddress 'user@example.org' -DaysBack 7 -OutputDir $testTempRoot -CorrelateClientAccess -OutputLevel INFO
+    $ctx.Inputs.CorrelateClientAccess | Should Be $true
   }
 }
 
 Describe 'Initialize-ImtRunContext logging paths' {
   It 'defaults logs to OutputDir when LogDir is not provided' {
-    $outputDir = Join-Path $env:TEMP ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $outputDir = Join-Path $testTempRoot ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 
     try {
@@ -71,8 +77,8 @@ Describe 'Initialize-ImtRunContext logging paths' {
   }
 
   It 'writes logs to LogDir when provided' {
-    $outputDir = Join-Path $env:TEMP ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
-    $logDir = Join-Path $env:TEMP ("imt-core-tests-logs-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $outputDir = Join-Path $testTempRoot ("imt-core-tests-output-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $logDir = Join-Path $testTempRoot ("imt-core-tests-logs-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 
     try {

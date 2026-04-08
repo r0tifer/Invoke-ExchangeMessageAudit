@@ -5,12 +5,17 @@ function Export-ImtTrackingReports {
   param(
     [Parameter(Mandatory=$true)]$RunContext,
     [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Results,
-    [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses
+    [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses,
+    [AllowEmptyCollection()][object[]]$ClientAttributionRows,
+    [AllowEmptyCollection()][object[]]$ClientAuditRows
   )
 
   if ($Results.Count -eq 0) {
     return New-ImtModuleResult -StepName 'TrackingReport' -Status 'WARN' -Summary 'No results to report/export.' -Data ([pscustomobject]@{
       CsvMain = $null
+      ClientAttributionCsv = $null
+      ClientAuditCsv = $null
+      ClientAttributionRows = @()
       TrackingKeywordRows = @()
       TrackingKeywordMailboxRows = @()
       DailyCounts = @()
@@ -27,6 +32,26 @@ function Export-ImtTrackingReports {
                   @{n='Recipients';e={($_.Recipients -join ';')}},
                   MessageSubject,MessageId,InternalMessageId,RecipientStatus,TotalBytes,SourceContext |
     Export-Csv -Path $csvMain -NoTypeInformation -Encoding UTF8
+
+  $clientAttributionCsv = $null
+  $clientAttributionRowSet = @($ClientAttributionRows)
+  if ($clientAttributionRowSet.Count -gt 0) {
+    $clientAttributionCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_{0}.csv" -f $RunContext.Timestamp)
+    $clientAttributionRowSet |
+      Sort-Object Mailbox,SubmittedAt,Subject |
+      Export-Csv -Path $clientAttributionCsv -NoTypeInformation -Encoding UTF8
+  }
+
+  $clientAuditCsv = $null
+  $clientAuditRowSet = @($ClientAuditRows)
+  if ($clientAuditRowSet.Count -gt 0) {
+    $clientAuditCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_Audit_{0}.csv" -f $RunContext.Timestamp)
+    $clientAuditRowSet |
+      Select-Object LastAccessed,Operation,OperationResult,LogonType,MailboxOwnerUPN,LogonUserDisplayName,
+                    ItemSubject,ClientInfoString,ClientIPAddress,ClientMachineName,ClientProcessName,
+                    ClientVersion,FolderPathName |
+      Export-Csv -Path $clientAuditCsv -NoTypeInformation -Encoding UTF8
+  }
 
   $dailyCounts = @(
     $Results |
@@ -149,11 +174,16 @@ function Export-ImtTrackingReports {
 
   New-ImtModuleResult -StepName 'TrackingReport' -Status 'OK' -Summary ("Tracking report exported: {0}" -f $csvMain) -Data ([pscustomobject]@{
     CsvMain = $csvMain
+    ClientAttributionCsv = $clientAttributionCsv
+    ClientAuditCsv = $clientAuditCsv
+    ClientAttributionRows = @($clientAttributionRowSet)
     TrackingKeywordRows = @($trackingKeywordRows)
     TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows)
     DailyCounts = @($dailyCounts)
   }) -Metrics @{
     ResultCount = $Results.Count
+    ClientAttributionRows = $clientAttributionRowSet.Count
+    ClientAuditRows = $clientAuditRowSet.Count
     TrackingKeywordRows = $trackingKeywordRows.Count
     TrackingKeywordMailboxRows = $trackingKeywordMailboxRows.Count
     DailyCounts = $dailyCounts.Count
