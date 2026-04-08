@@ -446,19 +446,10 @@ function Get-ImtMailboxAuditQueryParameters {
     return $params
   }
 
-  $parameterType = $resultSizeParameter.ParameterType
-  if ($parameterType -eq [int] -or $parameterType -eq [int32]) {
-    $params.ResultSize = 250000
-    return $params
-  }
-
-  if (
-    $parameterType -eq [string] -or
-    $parameterType -eq [object] -or
-    (($parameterType.FullName -as [string]) -match 'Unlimited')
-  ) {
-    $params.ResultSize = 'Unlimited'
-  }
+  # Exchange on-prem frequently exposes Search-MailboxAuditLog through a proxy
+  # command whose local parameter metadata does not reflect the remote Int32 cap.
+  # Use the server-accepted ceiling consistently instead of relying on proxy types.
+  $params.ResultSize = 250000
 
   $params
 }
