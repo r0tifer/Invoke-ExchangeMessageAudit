@@ -414,6 +414,55 @@ function Resolve-ImtTrackingDeviceAssessment {
   }
 }
 
+function Get-ImtMailboxAuditQueryParameters {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Identity,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$StartDate,
+
+    [Parameter(Mandatory = $true)]
+    [datetime]$EndDate
+  )
+
+  $params = @{
+    Identity = $Identity
+    LogonTypes = @('Owner', 'Delegate', 'Admin')
+    ShowDetails = $true
+    StartDate = $StartDate
+    EndDate = $EndDate
+    ErrorAction = 'Stop'
+  }
+
+  $command = Get-Command -Name Search-MailboxAuditLog -ErrorAction SilentlyContinue
+  if (-not $command) {
+    return $params
+  }
+
+  $resultSizeParameter = $command.Parameters['ResultSize']
+  if (-not $resultSizeParameter) {
+    return $params
+  }
+
+  $parameterType = $resultSizeParameter.ParameterType
+  if ($parameterType -eq [int] -or $parameterType -eq [int32]) {
+    $params.ResultSize = [int]::MaxValue
+    return $params
+  }
+
+  if (
+    $parameterType -eq [string] -or
+    $parameterType -eq [object] -or
+    (($parameterType.FullName -as [string]) -match 'Unlimited')
+  ) {
+    $params.ResultSize = 'Unlimited'
+  }
+
+  $params
+}
+
 function Invoke-ImtMessageClientAccessAudit {
   [CmdletBinding()]
   param(
@@ -481,15 +530,12 @@ function Invoke-ImtMessageClientAccessAudit {
 
     try {
       Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Querying mailbox audit log for sender '{0}'." -f $sender)
+      $mailboxAuditParams = Get-ImtMailboxAuditQueryParameters `
+        -Identity $sender `
+        -StartDate $RunContext.Start.AddMinutes(-$correlationWindowMinutes) `
+        -EndDate $RunContext.End.AddMinutes($correlationWindowMinutes)
       $senderAuditRows = @(
-        Search-MailboxAuditLog `
-          -Identity $sender `
-          -LogonTypes Owner, Delegate, Admin `
-          -ShowDetails `
-          -StartDate $RunContext.Start.AddMinutes(-$correlationWindowMinutes) `
-          -EndDate $RunContext.End.AddMinutes($correlationWindowMinutes) `
-          -ResultSize Unlimited `
-          -ErrorAction Stop
+        Search-MailboxAuditLog @mailboxAuditParams
       )
 
       $auditRowsBySender[$sender] = @($senderAuditRows)

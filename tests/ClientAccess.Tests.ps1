@@ -89,6 +89,28 @@ Describe 'Invoke-ImtMessageClientAccessAudit' {
   }
 }
 
+Describe 'Get-ImtMailboxAuditQueryParameters' {
+  It 'uses an integer result size when the command metadata requires Int32' {
+    function Search-MailboxAuditLog {
+      param(
+        [string]$Identity,
+        [string[]]$LogonTypes,
+        [switch]$ShowDetails,
+        [datetime]$StartDate,
+        [datetime]$EndDate,
+        [int]$ResultSize
+      )
+    }
+
+    $params = Get-ImtMailboxAuditQueryParameters `
+      -Identity 'jproger@arcticslope.org' `
+      -StartDate ([datetime]'2026-04-06T15:00:00') `
+      -EndDate ([datetime]'2026-04-06T22:00:00')
+
+    $params.ResultSize | Should Be ([int]::MaxValue)
+  }
+}
+
 Describe 'Resolve-ImtTrackingDeviceAssessment' {
   It 'falls back to transport client host when mailbox audit data is unavailable' {
     $trailHints = [pscustomobject]@{
