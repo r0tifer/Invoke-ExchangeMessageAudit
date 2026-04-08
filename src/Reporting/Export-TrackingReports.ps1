@@ -8,13 +8,15 @@ function Export-ImtTrackingReports {
     [Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$BaseTargetAddresses,
     [AllowEmptyCollection()][object[]]$ClientAttributionRows,
     [AllowEmptyCollection()][object[]]$ClientAuditRows,
-    [AllowEmptyCollection()][object[]]$ClientProtocolRows
+    [AllowEmptyCollection()][object[]]$ClientProtocolRows,
+    [AllowEmptyCollection()][object[]]$ClientActiveSyncRows
   )
 
   $resultRowSet = @($Results)
   $clientAttributionRowSet = @($ClientAttributionRows)
   $clientAuditRowSet = @($ClientAuditRows)
   $clientProtocolRowSet = @($ClientProtocolRows)
+  $clientActiveSyncRowSet = @($ClientActiveSyncRows)
   $inputKeywords = @($RunContext.Inputs.Keywords)
 
   if (@($resultRowSet).Count -eq 0) {
@@ -23,9 +25,11 @@ function Export-ImtTrackingReports {
       ClientAttributionCsv = $null
       ClientAuditCsv = $null
       ClientProtocolCsv = $null
+      ClientActiveSyncCsv = $null
       ClientAttributionRows = @()
       ClientAuditRows = @()
       ClientProtocolRows = @()
+      ClientActiveSyncRows = @()
       TrackingKeywordRows = @()
       TrackingKeywordMailboxRows = @()
       DailyCounts = @()
@@ -67,6 +71,14 @@ function Export-ImtTrackingReports {
     $clientProtocolRowSet |
       Sort-Object Mailbox,Timestamp,EvidenceType |
       Export-Csv -Path $clientProtocolCsv -NoTypeInformation -Encoding UTF8
+  }
+
+  $clientActiveSyncCsv = $null
+  if (@($clientActiveSyncRowSet).Count -gt 0) {
+    $clientActiveSyncCsv = Join-Path $RunContext.OutputDir ("MTL_ClientAttribution_ActiveSync_{0}.csv" -f $RunContext.Timestamp)
+    $clientActiveSyncRowSet |
+      Sort-Object Mailbox,LastSuccessSync,LastSyncAttemptTime,DeviceFriendlyName,DeviceModel |
+      Export-Csv -Path $clientActiveSyncCsv -NoTypeInformation -Encoding UTF8
   }
 
   $dailyCounts = @(
@@ -193,8 +205,11 @@ function Export-ImtTrackingReports {
     ClientAttributionCsv = $clientAttributionCsv
     ClientAuditCsv = $clientAuditCsv
     ClientProtocolCsv = $clientProtocolCsv
+    ClientActiveSyncCsv = $clientActiveSyncCsv
     ClientAttributionRows = @($clientAttributionRowSet)
+    ClientAuditRows = @($clientAuditRowSet)
     ClientProtocolRows = @($clientProtocolRowSet)
+    ClientActiveSyncRows = @($clientActiveSyncRowSet)
     TrackingKeywordRows = @($trackingKeywordRows)
     TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows)
     DailyCounts = @($dailyCounts)
@@ -203,6 +218,7 @@ function Export-ImtTrackingReports {
     ClientAttributionRows = @($clientAttributionRowSet).Count
     ClientAuditRows = @($clientAuditRowSet).Count
     ClientProtocolRows = @($clientProtocolRowSet).Count
+    ClientActiveSyncRows = @($clientActiveSyncRowSet).Count
     TrackingKeywordRows = @($trackingKeywordRows).Count
     TrackingKeywordMailboxRows = @($trackingKeywordMailboxRows).Count
     DailyCounts = @($dailyCounts).Count

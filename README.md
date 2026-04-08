@@ -31,7 +31,7 @@ It orchestrates:
 - Identity resolution (participants, senders, mailbox validation)
 - Transport topology discovery
 - Message tracking queries with filtering
-- Optional mailbox-audit correlation for client/device attribution
+- Optional mailbox-audit, protocol-log, and ActiveSync device correlation for client/device attribution
 - Keyword-based audit logic
 - Optional mailbox search estimates
 - Optional export preflight checks
@@ -83,6 +83,7 @@ Depending on options used, you’ll get:
 
 - Primary message tracking CSV
 - Optional client attribution CSV
+- Optional raw ActiveSync device evidence CSV
 - Keyword summaries (overall + per mailbox)
 - Direct mailbox search exports
 - Retention snapshot CSV
@@ -142,7 +143,7 @@ Logs still capture everything regardless.
 | `-OutboundOnly` | `switch` | Restrict mailbox search/export logic to sent-item time windows only. |
 | `-DetailedMailboxEvidence` | `switch` | Copy matching items to an evidence mailbox and produce a consolidated message-level evidence CSV. |
 | `-EvidenceMailbox` | `string` | Target mailbox used to hold copied evidence items for `-DetailedMailboxEvidence`. |
-| `-CorrelateClientAccess` | `switch` | Correlate sent-message tracking results with mailbox audit details, Exchange front-end protocol logs, SMTP receive protocol logs, and transport client hints to identify the likely sender device/client. |
+| `-CorrelateClientAccess` | `switch` | Correlate sent-message tracking results with mailbox audit details, Exchange front-end protocol logs, SMTP receive protocol logs, ActiveSync device partnership/statistics data, and transport client hints to identify the likely sender device/client. |
 | `-DisableTranscriptLog` | `switch` | Disable transcript logging (step logging behavior remains as implemented by logger settings). |
 | `-SearchDumpsterDirectly` | `switch` | Include dumpster when running direct mailbox estimate queries. |
 | `-ExpandExportScopeFromMatchedTraffic` | `switch` | Add matched sender/recipient traffic addresses to mailbox export target scope. |

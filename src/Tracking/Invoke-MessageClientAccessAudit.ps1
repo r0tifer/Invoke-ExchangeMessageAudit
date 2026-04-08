@@ -390,6 +390,7 @@ function Resolve-ImtTrackingDeviceAssessment {
   param(
     [pscustomobject]$AuditMatch,
     [pscustomobject]$ProtocolMatch,
+    [pscustomobject]$ActiveSyncMatch,
     [Parameter(Mandatory = $true)]
     [pscustomobject]$TrailHints
   )
@@ -475,6 +476,76 @@ function Resolve-ImtTrackingDeviceAssessment {
     }
   }
 
+  if ($ActiveSyncMatch) {
+    $activeSyncRow = $ActiveSyncMatch.Row
+    $deviceId = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceId') -as [string]
+    $deviceType = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceType') -as [string]
+    $deviceModel = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceModel') -as [string]
+    $deviceOs = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceOS') -as [string]
+    $deviceFriendlyName = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceFriendlyName') -as [string]
+    $deviceUserAgent = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'DeviceUserAgent') -as [string]
+    $clientType = (Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'ClientType') -as [string]
+    $lastSuccessSync = Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'LastSuccessSync'
+    $lastSyncAttemptTime = Get-ImtTrackingPropertyValue -InputObject $activeSyncRow -PropertyName 'LastSyncAttemptTime'
+
+    $clientInfoParts = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @(
+        if (-not [string]::IsNullOrWhiteSpace($clientType)) { 'ClientType={0}' -f $clientType.Trim() } else { $null }
+        if (-not [string]::IsNullOrWhiteSpace($deviceUserAgent)) { 'UserAgent={0}' -f $deviceUserAgent.Trim() } else { $null }
+        if (-not [string]::IsNullOrWhiteSpace($deviceId)) { 'DeviceId={0}' -f $deviceId.Trim() } else { $null }
+      )) {
+      if (-not [string]::IsNullOrWhiteSpace(($entry -as [string]))) {
+        [void]$clientInfoParts.Add($entry)
+      }
+    }
+
+    $evidenceNote = 'Matched ActiveSync device partnership details.'
+    if ($ActiveSyncMatch.TimeProperty -and $ActiveSyncMatch.DeltaMinutes -ne $null) {
+      $evidenceNote = ('Matched ActiveSync device evidence using {0} within {1} minute(s).' -f $ActiveSyncMatch.TimeProperty, $ActiveSyncMatch.DeltaMinutes)
+    } elseif ($ActiveSyncMatch.DeltaMinutes -ne $null) {
+      $evidenceNote = ('Matched ActiveSync device evidence within {0} minute(s).' -f $ActiveSyncMatch.DeltaMinutes)
+    }
+
+    $clientMachineName = $null
+    foreach ($value in @($deviceFriendlyName, $deviceModel, $deviceType)) {
+      if (-not [string]::IsNullOrWhiteSpace(($value -as [string]))) {
+        $clientMachineName = $value.Trim()
+        break
+      }
+    }
+
+    return [pscustomobject]@{
+      AttributionSource = 'ActiveSyncDevice'
+      AttributionConfidence = $ActiveSyncMatch.Confidence
+      LikelyClient = Format-ImtActiveSyncLikelyClient -DeviceRow $activeSyncRow
+      ClientInfoString = Join-ImtTrackingDistinctValues -Values $clientInfoParts.ToArray()
+      ClientProcessName = $null
+      ClientMachineName = $clientMachineName
+      ClientVersion = $deviceOs
+      ClientIPAddress = $TrailHints.ClientIPAddress
+      TransportClientHostname = $TrailHints.ClientHostname
+      TransportClientIPAddress = $TrailHints.ClientIPAddress
+      ProtocolEvidenceType = $null
+      ProtocolLogServer = $null
+      ProtocolLogPath = $null
+      ProtocolUserAgent = $null
+      ProtocolRemoteEndpoint = $null
+      ProtocolTimestamp = $null
+      ProtocolDeltaMinutes = $null
+      ActiveSyncDeviceId = $deviceId
+      ActiveSyncDeviceType = $deviceType
+      ActiveSyncDeviceModel = $deviceModel
+      ActiveSyncDeviceOS = $deviceOs
+      ActiveSyncDeviceFriendlyName = $deviceFriendlyName
+      ActiveSyncDeviceUserAgent = $deviceUserAgent
+      ActiveSyncClientType = $clientType
+      ActiveSyncLastSuccessSync = $lastSuccessSync
+      ActiveSyncLastSyncAttemptTime = $lastSyncAttemptTime
+      ActiveSyncDeltaMinutes = $ActiveSyncMatch.DeltaMinutes
+      EvidenceNote = $evidenceNote
+    }
+  }
+
   if (-not [string]::IsNullOrWhiteSpace($trailTrackingClientType)) {
     $clientType = $trailTrackingClientType
     $submissionAssistant = $trailSubmissionAssistant
@@ -548,7 +619,7 @@ function Resolve-ImtTrackingDeviceAssessment {
     ProtocolRemoteEndpoint = $null
     ProtocolTimestamp = $null
     ProtocolDeltaMinutes = $null
-    EvidenceNote = 'Exchange tracking did not expose a client host, and no correlated mailbox audit row was found.'
+    EvidenceNote = 'Exchange tracking did not expose a client host, and no correlated mailbox audit, ActiveSync device, or protocol-log row was found.'
   }
 }
 
@@ -1169,6 +1240,164 @@ function Find-ImtTrackingBestProtocolLogMatch {
   }
 }
 
+function Format-ImtActiveSyncLikelyClient {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$DeviceRow
+  )
+
+  $friendlyName = (Get-ImtTrackingPropertyValue -InputObject $DeviceRow -PropertyName 'DeviceFriendlyName') -as [string]
+  $deviceModel = (Get-ImtTrackingPropertyValue -InputObject $DeviceRow -PropertyName 'DeviceModel') -as [string]
+  $deviceType = (Get-ImtTrackingPropertyValue -InputObject $DeviceRow -PropertyName 'DeviceType') -as [string]
+  $deviceOs = (Get-ImtTrackingPropertyValue -InputObject $DeviceRow -PropertyName 'DeviceOS') -as [string]
+
+  $parts = New-Object System.Collections.Generic.List[string]
+  foreach ($value in @($friendlyName, $deviceModel, $deviceType)) {
+    $text = ($value -as [string])
+    if (-not [string]::IsNullOrWhiteSpace($text)) {
+      $normalized = $text.Trim()
+      if (-not ($parts.Contains($normalized))) {
+        [void]$parts.Add($normalized)
+      }
+    }
+  }
+
+  $label = if ($parts.Count -gt 0) {
+    $parts -join ' / '
+  } else {
+    'Mobile client'
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($deviceOs)) {
+    return ('{0} ({1}) via ActiveSync' -f $label, $deviceOs.Trim())
+  }
+
+  ('{0} via ActiveSync' -f $label)
+}
+
+function Find-ImtTrackingBestActiveSyncDeviceMatch {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$Message,
+
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$TrailHints,
+
+    [AllowEmptyCollection()]
+    [object[]]$DeviceRows
+  )
+
+  if (-not $DeviceRows -or @($DeviceRows).Count -eq 0) {
+    return $null
+  }
+
+  $messageTimestamp = [datetime]$Message.SubmittedAt
+  $trackingClientType = (Get-ImtTrackingPropertyValue -InputObject $TrailHints -PropertyName 'TrackingClientType') -as [string]
+  $requiresActiveSync = -not [string]::IsNullOrWhiteSpace($trackingClientType) -and $trackingClientType -match '(?i)activesync|airsync'
+
+  $scoredRows = New-Object System.Collections.Generic.List[object]
+  $deviceRowSet = @($DeviceRows)
+
+  foreach ($row in $deviceRowSet) {
+    $candidateTimestamps = @()
+    foreach ($propertyName in @('LastSyncAttemptTime', 'LastSuccessSync', 'LastPolicyUpdateTime', 'FirstSyncTime')) {
+      $timestamp = ConvertTo-ImtProtocolComparableTimestamp -Value (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName $propertyName)
+      if ($timestamp) {
+        $candidateTimestamps += [pscustomobject]@{
+          PropertyName = $propertyName
+          Timestamp = $timestamp
+          DeltaMinutes = [math]::Abs((New-TimeSpan -Start $messageTimestamp -End $timestamp).TotalMinutes)
+        }
+      }
+    }
+
+    $nearestTimestamp = $candidateTimestamps |
+      Sort-Object `
+        @{ Expression = 'DeltaMinutes'; Descending = $false }, `
+        @{ Expression = 'PropertyName'; Descending = $false } |
+      Select-Object -First 1
+
+    $deviceType = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceType') -as [string]
+    $deviceModel = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceModel') -as [string]
+    $deviceOs = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceOS') -as [string]
+    $friendlyName = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceFriendlyName') -as [string]
+    $deviceUserAgent = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceUserAgent') -as [string]
+    $clientType = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'ClientType') -as [string]
+    $deviceAccessState = (Get-ImtTrackingPropertyValue -InputObject $row -PropertyName 'DeviceAccessState') -as [string]
+
+    $score = 0
+    if ($requiresActiveSync) {
+      $score += 50
+    }
+
+    if ($clientType -match '(?i)activesync|airsync|eas') {
+      $score += 30
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($deviceType) -or -not [string]::IsNullOrWhiteSpace($deviceModel) -or -not [string]::IsNullOrWhiteSpace($friendlyName)) {
+      $score += 15
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($deviceOs) -or -not [string]::IsNullOrWhiteSpace($deviceUserAgent)) {
+      $score += 10
+    }
+
+    if ($deviceAccessState -match '(?i)^allowed$') {
+      $score += 10
+    }
+
+    if ($nearestTimestamp) {
+      if ($nearestTimestamp.DeltaMinutes -le 15) {
+        $score += 40
+      } elseif ($nearestTimestamp.DeltaMinutes -le 60) {
+        $score += 30
+      } elseif ($nearestTimestamp.DeltaMinutes -le 720) {
+        $score += 20
+      } elseif ($nearestTimestamp.DeltaMinutes -le 1440) {
+        $score += 10
+      }
+    } elseif ($deviceRowSet.Count -eq 1) {
+      $score += 10
+    }
+
+    [void]$scoredRows.Add([pscustomobject]@{
+      Row = $row
+      Score = $score
+      DeltaMinutes = if ($nearestTimestamp) { [math]::Round($nearestTimestamp.DeltaMinutes, 2) } else { $null }
+      TimeProperty = if ($nearestTimestamp) { $nearestTimestamp.PropertyName } else { $null }
+      HasRichDeviceData = (-not [string]::IsNullOrWhiteSpace($deviceType)) -or (-not [string]::IsNullOrWhiteSpace($deviceModel)) -or (-not [string]::IsNullOrWhiteSpace($friendlyName))
+      DeviceRowCount = $deviceRowSet.Count
+    })
+  }
+
+  $bestMatch = $scoredRows |
+    Sort-Object `
+      @{ Expression = 'Score'; Descending = $true }, `
+      @{ Expression = 'DeltaMinutes'; Descending = $false } |
+    Select-Object -First 1
+
+  if (-not $bestMatch) {
+    return $null
+  }
+
+  $confidence = 'Low'
+  if ($bestMatch.DeltaMinutes -ne $null -and $bestMatch.DeltaMinutes -le 15 -and $bestMatch.HasRichDeviceData) {
+    $confidence = 'High'
+  } elseif (($bestMatch.DeltaMinutes -ne $null -and $bestMatch.DeltaMinutes -le 1440) -or ($bestMatch.DeviceRowCount -eq 1 -and $bestMatch.HasRichDeviceData)) {
+    $confidence = 'Medium'
+  }
+
+  [pscustomobject]@{
+    Row = $bestMatch.Row
+    Score = $bestMatch.Score
+    DeltaMinutes = $bestMatch.DeltaMinutes
+    TimeProperty = $bestMatch.TimeProperty
+    Confidence = $confidence
+  }
+}
+
 function Invoke-ImtMessageClientAccessAudit {
   [CmdletBinding()]
   param(
@@ -1191,15 +1420,19 @@ function Invoke-ImtMessageClientAccessAudit {
       Rows = @()
       AuditRows = @()
       ProtocolRows = @()
+      ActiveSyncRows = @()
       AuditAvailable = $false
       AuditFailures = @()
       ProtocolFailures = @()
+      ActiveSyncFailures = @()
     }) -Metrics @{
       MessageRows = 0
       MailboxAuditRows = 0
       ProtocolRows = 0
+      ActiveSyncRows = 0
       AuditFailures = 0
       ProtocolFailures = 0
+      ActiveSyncFailures = 0
     } -Errors @()
   }
 
@@ -1220,11 +1453,40 @@ function Invoke-ImtMessageClientAccessAudit {
     }
   }
 
+  $senderTrailHintsBySender = @{}
+  foreach ($senderKey in @($senderSet.Keys | Sort-Object)) {
+    $senderRows = @(
+      $Results |
+        Where-Object {
+          $rowSender = (Get-ImtTrackingPropertyValue -InputObject $_ -PropertyName 'Sender') -as [string]
+          $rowSender -and $rowSender.Trim().ToLowerInvariant() -eq $senderKey
+        }
+    )
+
+    if ($senderRows.Count -gt 0) {
+      $senderTrailHintsBySender[$senderKey] = Get-ImtTrackingTrailHints -Rows $senderRows
+    }
+  }
+
+  $resolvedMailboxBySender = @{}
+  foreach ($sender in @($senderSet.Keys | Sort-Object)) {
+    $shouldAttemptMailboxLookup = ($candidateMailboxSet.Count -eq 0) -or $candidateMailboxSet.ContainsKey($sender)
+    if (-not $shouldAttemptMailboxLookup) {
+      continue
+    }
+
+    $resolvedMailbox = Resolve-ImtMailboxByAddress -Address $sender
+    if ($resolvedMailbox) {
+      $resolvedMailboxBySender[$sender] = $resolvedMailbox
+    } else {
+      Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Unable to resolve sender '{0}' to a mailbox for mailbox/device correlation." -f $sender)
+    }
+  }
+
   $auditAvailable = $null -ne (Get-Command -Name Search-MailboxAuditLog -ErrorAction SilentlyContinue)
   $auditFailures = New-Object System.Collections.Generic.List[string]
   $auditRows = New-Object System.Collections.Generic.List[object]
   $auditRowsBySender = @{}
-  $resolvedMailboxBySender = @{}
 
   foreach ($sender in @($senderSet.Keys | Sort-Object)) {
     $shouldAttemptAudit = ($candidateMailboxSet.Count -eq 0) -or $candidateMailboxSet.ContainsKey($sender)
@@ -1236,12 +1498,11 @@ function Invoke-ImtMessageClientAccessAudit {
       continue
     }
 
-    $resolvedMailbox = Resolve-ImtMailboxByAddress -Address $sender
+    $resolvedMailbox = if ($resolvedMailboxBySender.ContainsKey($sender)) { $resolvedMailboxBySender[$sender] } else { $null }
     if (-not $resolvedMailbox) {
       Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Skipping mailbox audit correlation for sender '{0}' because it could not be resolved to a local mailbox." -f $sender)
       continue
     }
-    $resolvedMailboxBySender[$sender] = $resolvedMailbox
 
     try {
       Write-ImtLog -Level DEBUG -Step 'MessageClientAccess' -EventType Progress -Message ("Querying mailbox audit log for sender '{0}'." -f $sender)
@@ -1273,6 +1534,46 @@ function Invoke-ImtMessageClientAccessAudit {
 
   foreach ($failure in @($protocolFailures)) {
     Write-ImtLog -Level WARN -Step 'MessageClientAccess' -EventType Progress -Message ("Protocol log evidence query warning: {0}" -f $failure)
+  }
+
+  $activeSyncRows = @()
+  $activeSyncFailures = New-Object System.Collections.Generic.List[string]
+  $activeSyncRowsBySender = @{}
+
+  foreach ($sender in @($senderSet.Keys | Sort-Object)) {
+    $trailHints = if ($senderTrailHintsBySender.ContainsKey($sender)) { $senderTrailHintsBySender[$sender] } else { $null }
+    $trackingClientType = if ($trailHints) { (Get-ImtTrackingPropertyValue -InputObject $trailHints -PropertyName 'TrackingClientType') -as [string] } else { $null }
+    $isActiveSyncCandidate = -not [string]::IsNullOrWhiteSpace($trackingClientType) -and $trackingClientType -match '(?i)activesync|airsync'
+    if (-not $isActiveSyncCandidate) {
+      continue
+    }
+
+    $mailboxLookupIdentity = $sender
+    if ($resolvedMailboxBySender.ContainsKey($sender)) {
+      $resolvedMailbox = $resolvedMailboxBySender[$sender]
+      $mailboxLookupIdentity = (Get-ImtTrackingFirstAvailablePropertyValue -InputObject $resolvedMailbox -PropertyNames @('PrimarySmtpAddress', 'Identity', 'Alias')) -as [string]
+      if ([string]::IsNullOrWhiteSpace($mailboxLookupIdentity)) {
+        $mailboxLookupIdentity = $sender
+      }
+    }
+
+    try {
+      $activeSyncEvidenceResult = Get-ImtActiveSyncDeviceEvidence -MailboxIdentity $mailboxLookupIdentity
+      $senderActiveSyncRows = @($activeSyncEvidenceResult.Rows)
+      $activeSyncRowsBySender[$sender] = $senderActiveSyncRows
+      foreach ($row in $senderActiveSyncRows) {
+        $activeSyncRows += $row
+      }
+      foreach ($failure in @($activeSyncEvidenceResult.Failures)) {
+        [void]$activeSyncFailures.Add(('{0}: {1}' -f $sender, $failure))
+      }
+    } catch {
+      [void]$activeSyncFailures.Add(('{0}: {1}' -f $sender, $_.Exception.Message))
+    }
+  }
+
+  foreach ($failure in @($activeSyncFailures)) {
+    Write-ImtLog -Level WARN -Step 'MessageClientAccess' -EventType Progress -Message ("ActiveSync device correlation warning: {0}" -f $failure)
   }
 
   $messageRows = New-Object System.Collections.Generic.List[object]
@@ -1327,7 +1628,19 @@ function Invoke-ImtMessageClientAccessAudit {
       }) `
       -ProtocolRows $senderProtocolRows
 
-    $deviceAssessment = Resolve-ImtTrackingDeviceAssessment -AuditMatch $auditMatch -ProtocolMatch $protocolMatch -TrailHints $trailHints
+    $senderActiveSyncRows = if ($normalizedSender -and $activeSyncRowsBySender.ContainsKey($normalizedSender)) {
+      @($activeSyncRowsBySender[$normalizedSender])
+    } else {
+      @()
+    }
+
+    $activeSyncMatch = Find-ImtTrackingBestActiveSyncDeviceMatch -Message ([pscustomobject]@{
+        SubmittedAt = $submittedAt
+      }) `
+      -TrailHints $trailHints `
+      -DeviceRows $senderActiveSyncRows
+
+    $deviceAssessment = Resolve-ImtTrackingDeviceAssessment -AuditMatch $auditMatch -ProtocolMatch $protocolMatch -ActiveSyncMatch $activeSyncMatch -TrailHints $trailHints
 
     [void]$messageRows.Add([pscustomobject]@{
       Mailbox = $sender
@@ -1360,6 +1673,16 @@ function Invoke-ImtMessageClientAccessAudit {
       ProtocolRemoteEndpoint = $deviceAssessment.ProtocolRemoteEndpoint
       ProtocolTimestamp = $deviceAssessment.ProtocolTimestamp
       ProtocolDeltaMinutes = $deviceAssessment.ProtocolDeltaMinutes
+      ActiveSyncDeviceId = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceId'
+      ActiveSyncDeviceType = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceType'
+      ActiveSyncDeviceModel = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceModel'
+      ActiveSyncDeviceOS = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceOS'
+      ActiveSyncDeviceFriendlyName = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceFriendlyName'
+      ActiveSyncDeviceUserAgent = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeviceUserAgent'
+      ActiveSyncClientType = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncClientType'
+      ActiveSyncLastSuccessSync = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncLastSuccessSync'
+      ActiveSyncLastSyncAttemptTime = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncLastSyncAttemptTime'
+      ActiveSyncDeltaMinutes = Get-ImtTrackingPropertyValue -InputObject $deviceAssessment -PropertyName 'ActiveSyncDeltaMinutes'
       EvidenceNote = $deviceAssessment.EvidenceNote
       MailboxAuditOperation = if ($auditMatch) { (Get-ImtTrackingPropertyValue -InputObject $auditMatch.Row -PropertyName 'Operation') -as [string] } else { $null }
       MailboxAuditLogonType = if ($auditMatch) { (Get-ImtTrackingPropertyValue -InputObject $auditMatch.Row -PropertyName 'LogonType') -as [string] } else { $null }
@@ -1376,8 +1699,8 @@ function Invoke-ImtMessageClientAccessAudit {
     None = @($rowArray | Where-Object { $_.AttributionConfidence -eq 'None' }).Count
   }
 
-  $status = if (-not $auditAvailable -or $auditFailures.Count -gt 0 -or $protocolFailures.Count -gt 0 -or $confidenceCounts.None -gt 0) { 'WARN' } else { 'OK' }
-  $summary = "Client attribution rows={0}; High={1}; Medium={2}; Low={3}; None={4}; MailboxAuditRows={5}; ProtocolRows={6}; AuditFailures={7}; ProtocolFailures={8}" -f `
+  $status = if (-not $auditAvailable -or $auditFailures.Count -gt 0 -or $protocolFailures.Count -gt 0 -or $activeSyncFailures.Count -gt 0 -or $confidenceCounts.None -gt 0) { 'WARN' } else { 'OK' }
+  $summary = "Client attribution rows={0}; High={1}; Medium={2}; Low={3}; None={4}; MailboxAuditRows={5}; ProtocolRows={6}; ActiveSyncRows={7}; AuditFailures={8}; ProtocolFailures={9}; ActiveSyncFailures={10}" -f `
     $rowArray.Count, `
     $confidenceCounts.High, `
     $confidenceCounts.Medium, `
@@ -1385,25 +1708,31 @@ function Invoke-ImtMessageClientAccessAudit {
     $confidenceCounts.None, `
     $auditRows.Count, `
     $protocolRows.Count, `
+    @($activeSyncRows).Count, `
     $auditFailures.Count, `
-    $protocolFailures.Count
+    $protocolFailures.Count, `
+    $activeSyncFailures.Count
 
   New-ImtModuleResult -StepName 'MessageClientAccess' -Status $status -Summary $summary -Data ([pscustomobject]@{
     Rows = $rowArray
     AuditRows = @($auditRows.ToArray())
     ProtocolRows = @($protocolRows)
+    ActiveSyncRows = @($activeSyncRows)
     AuditAvailable = [bool]$auditAvailable
     AuditFailures = @($auditFailures.ToArray())
     ProtocolFailures = @($protocolFailures)
+    ActiveSyncFailures = @($activeSyncFailures)
   }) -Metrics @{
     MessageRows = $rowArray.Count
     MailboxAuditRows = $auditRows.Count
     ProtocolRows = $protocolRows.Count
+    ActiveSyncRows = @($activeSyncRows).Count
     HighConfidence = $confidenceCounts.High
     MediumConfidence = $confidenceCounts.Medium
     LowConfidence = $confidenceCounts.Low
     NoConfidence = $confidenceCounts.None
     AuditFailures = $auditFailures.Count
     ProtocolFailures = $protocolFailures.Count
-  } -Errors @(@($auditFailures) + @($protocolFailures))
+    ActiveSyncFailures = $activeSyncFailures.Count
+  } -Errors @(@($auditFailures) + @($protocolFailures) + @($activeSyncFailures))
 }

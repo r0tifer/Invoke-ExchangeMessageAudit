@@ -4,15 +4,35 @@ $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 . (Join-Path $repoRoot 'src\\Models\\New-ResultObjects.ps1')
 . (Join-Path $repoRoot 'src\\Logging\\Write-ImtLog.ps1')
 . (Join-Path $repoRoot 'src\\Identity\\Resolve-Participants.ps1')
+. (Join-Path $repoRoot 'src\\Exchange\\Get-ActiveSyncDeviceEvidence.ps1')
 . (Join-Path $repoRoot 'src\\Tracking\\Invoke-MessageClientAccessAudit.ps1')
 
 function Get-Recipient { }
 function Get-Mailbox { }
 function Search-MailboxAuditLog { }
+function Get-MobileDevice {
+  [CmdletBinding()]
+  param(
+    [string]$Mailbox
+  )
+}
+function Get-MobileDeviceStatistics {
+  [CmdletBinding()]
+  param(
+    [string]$Mailbox
+  )
+}
 
 Describe 'Invoke-ImtMessageClientAccessAudit' {
   BeforeEach {
     Mock Write-ImtLog {}
+    Mock Get-ImtActiveSyncDeviceEvidence {
+      [pscustomobject]@{
+        Available = $true
+        Rows = @()
+        Failures = @()
+      }
+    }
   }
 
   It 'correlates mailbox audit client details to grouped tracking results' {
@@ -214,6 +234,89 @@ Describe 'Invoke-ImtMessageClientAccessAudit' {
     @($result.Data.Rows)[0].LikelyClient | Should Be 'Mobile client via ActiveSync'
     @($result.Data.Rows)[0].ClientInfoString | Should Match 'ClientType=AirSync'
     @($result.Data.Rows)[0].ClientIPAddress | Should Be '172.16.2.16'
+  }
+
+  It 'prefers ActiveSync device evidence when AirSync tracking and device stats are available' {
+    $runContext = [pscustomobject]@{
+      Start = [datetime]'2026-04-06T15:00:00'
+      End = [datetime]'2026-04-06T22:00:00'
+    }
+
+    Mock Resolve-ImtMailboxByAddress {
+      [pscustomobject]@{
+        Identity = 'jroger'
+        PrimarySmtpAddress = 'jeffrey.roger@arcticslope.org'
+        ExchangeGuid = '1320642c-99cb-4a3f-bd0c-240948aebd03'
+      }
+    }
+
+    Mock Search-MailboxAuditLog { @() }
+
+    Mock Get-ImtProtocolEvidenceRowsForSenders {
+      [pscustomobject]@{
+        Rows = @()
+        Failures = @()
+      }
+    }
+
+    Mock Get-ImtActiveSyncDeviceEvidence {
+      [pscustomobject]@{
+        Available = $true
+        Rows = @(
+          [pscustomobject]@{
+            Mailbox = 'jeffrey.roger@arcticslope.org'
+            Identity = 'jeffrey.roger@arcticslope.org\\ExchangeActiveSyncDevices\\ApplABC123'
+            DeviceId = 'ApplABC123'
+            DeviceType = 'iPhone'
+            DeviceModel = 'iPhone 15'
+            DeviceOS = 'iOS 17.4'
+            DeviceFriendlyName = 'Jeff iPhone'
+            DeviceUserAgent = 'Apple-iPhone/1704'
+            ClientType = 'AirSync'
+            DeviceAccessState = 'Allowed'
+            FirstSyncTime = [datetime]'2026-04-01T09:00:00'
+            LastSuccessSync = [datetime]'2026-04-06T19:01:10'
+            LastSyncAttemptTime = [datetime]'2026-04-06T19:01:00'
+            LastPolicyUpdateTime = [datetime]'2026-04-06T18:30:00'
+          }
+        )
+        Failures = @()
+      }
+    }
+
+    $results = @(
+      [pscustomobject]@{
+        Sender = 'Jeffrey.Roger@arcticslope.org'
+        Recipients = @('Susan.Miklavcic@arcticslope.org')
+        MessageSubject = 'Resignation from medical Staff'
+        MessageId = '<msg-01@example.org>'
+        InternalMessageId = '101'
+        EventId = 'SUBMIT'
+        Timestamp = [datetime]'2026-04-06T19:00:15'
+        ServerHostname = 'EXCH-SE-03.asna.alaska.ihs.gov'
+        Source = 'STOREDRIVER'
+        ClientHostname = 'EXCH-SE-02'
+        ClientIp = '172.16.2.16'
+        ConnectorId = $null
+        SourceContext = 'MDB:f4f3423e-3ce8-4dd2-a4de-5a5b79f23b63, Mailbox:1320642c-99cb-4a3f-bd0c-240948aebd03, Event:28662855, MessageClass:IPM.Note, CreationTime:2026-04-07T03:00:15.485Z, ClientType:AirSync, SubmissionAssistant:MailboxTransportSubmissionEmailAssistant'
+      }
+    )
+
+    $result = Invoke-ImtMessageClientAccessAudit `
+      -RunContext $runContext `
+      -Results $results `
+      -CandidateMailboxAddresses @('jeffrey.roger@arcticslope.org') `
+      -Servers @('EXCH-SE-01', 'EXCH-SE-02', 'EXCH-SE-03')
+
+    $result.Status | Should Be 'OK'
+    @($result.Data.Rows).Count | Should Be 1
+    @($result.Data.Rows)[0].AttributionSource | Should Be 'ActiveSyncDevice'
+    @($result.Data.Rows)[0].AttributionConfidence | Should Be 'High'
+    @($result.Data.Rows)[0].LikelyClient | Should Match 'Jeff iPhone'
+    @($result.Data.Rows)[0].ClientMachineName | Should Be 'Jeff iPhone'
+    @($result.Data.Rows)[0].ActiveSyncDeviceId | Should Be 'ApplABC123'
+    @($result.Data.Rows)[0].ActiveSyncDeviceModel | Should Be 'iPhone 15'
+    @($result.Data.Rows)[0].ActiveSyncClientType | Should Be 'AirSync'
   }
 }
 

@@ -171,19 +171,35 @@ Describe 'Invoke-ExchangeMessageAudit client access correlation' {
           }
         )
         AuditRows = @()
+        ProtocolRows = @()
+        ActiveSyncRows = @(
+          [pscustomobject]@{
+            Mailbox = 'jproger@arcticslope.org'
+            DeviceId = 'ApplABC123'
+            DeviceFriendlyName = 'Jeff iPhone'
+          }
+        )
+        AuditFailures = @()
+        ProtocolFailures = @()
+        ActiveSyncFailures = @()
       }) -Metrics @{} -Errors @()
     }
     $script:ReportedClientRows = @()
+    $script:ReportedActiveSyncRows = @()
     Mock Export-ImtTrackingReports {
-      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses, [object[]]$ClientAttributionRows, [object[]]$ClientAuditRows, [object[]]$ClientProtocolRows)
+      param($RunContext, [object[]]$Results, [string[]]$BaseTargetAddresses, [object[]]$ClientAttributionRows, [object[]]$ClientAuditRows, [object[]]$ClientProtocolRows, [object[]]$ClientActiveSyncRows)
       $script:ReportedClientRows = @($ClientAttributionRows)
+      $script:ReportedActiveSyncRows = @($ClientActiveSyncRows)
       New-ImtModuleResult -StepName 'TrackingReport' -Status 'OK' -Summary 'ok' -Data ([pscustomobject]@{
         CsvMain = $null
         ClientAttributionCsv = $null
         ClientAuditCsv = $null
         ClientProtocolCsv = $null
+        ClientActiveSyncCsv = $null
         ClientAttributionRows = @($ClientAttributionRows)
+        ClientAuditRows = @($ClientAuditRows)
         ClientProtocolRows = @($ClientProtocolRows)
+        ClientActiveSyncRows = @($ClientActiveSyncRows)
         TrackingKeywordRows = @()
         TrackingKeywordMailboxRows = @()
         DailyCounts = @()
@@ -237,6 +253,8 @@ Describe 'Invoke-ExchangeMessageAudit client access correlation' {
 
       @($script:ReportedClientRows).Count | Should Be 1
       $script:ReportedClientRows[0].ClientMachineName | Should Be 'JPROGER-LT'
+      @($script:ReportedActiveSyncRows).Count | Should Be 1
+      $script:ReportedActiveSyncRows[0].DeviceId | Should Be 'ApplABC123'
     } finally {
       Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }

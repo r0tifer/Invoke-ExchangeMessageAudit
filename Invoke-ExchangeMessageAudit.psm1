@@ -8,6 +8,7 @@ $sourceFiles = @(
   'src\Identity\Resolve-Participants.ps1'
   'src\Exchange\Get-TransportTopology.ps1'
   'src\Exchange\Get-RetentionSnapshot.ps1'
+  'src\Exchange\Get-ActiveSyncDeviceEvidence.ps1'
   'src\Tracking\Invoke-MessageTrackingAudit.ps1'
   'src\Tracking\Invoke-MessageClientAccessAudit.ps1'
   'src\Reporting\Export-TrackingReports.ps1'

@@ -222,13 +222,15 @@ Describe 'Export-ImtTrackingReports' {
         -BaseTargetAddresses @('jeffrey.roger@arcticslope.org') `
         -ClientAttributionRows $clientRows `
         -ClientAuditRows @() `
-        -ClientProtocolRows @()
+        -ClientProtocolRows @() `
+        -ClientActiveSyncRows @()
 
       $result.Status | Should Be 'OK'
       @($result.Data.ClientAttributionRows).Count | Should Be 1
       $result.Metrics.ResultCount | Should Be 1
       $result.Metrics.ClientAttributionRows | Should Be 1
       $result.Metrics.ClientProtocolRows | Should Be 0
+      $result.Metrics.ClientActiveSyncRows | Should Be 0
       Test-Path -LiteralPath $result.Data.CsvMain | Should Be $true
       Test-Path -LiteralPath $result.Data.ClientAttributionCsv | Should Be $true
     } finally {

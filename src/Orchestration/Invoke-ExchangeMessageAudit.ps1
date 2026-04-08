@@ -246,9 +246,11 @@ function Invoke-ExchangeMessageAudit {
           Rows = if ($clientAccessRawData.PSObject.Properties.Match('Rows').Count -gt 0) { @($clientAccessRawData.Rows) } else { @() }
           AuditRows = if ($clientAccessRawData.PSObject.Properties.Match('AuditRows').Count -gt 0) { @($clientAccessRawData.AuditRows) } else { @() }
           ProtocolRows = if ($clientAccessRawData.PSObject.Properties.Match('ProtocolRows').Count -gt 0) { @($clientAccessRawData.ProtocolRows) } else { @() }
+          ActiveSyncRows = if ($clientAccessRawData.PSObject.Properties.Match('ActiveSyncRows').Count -gt 0) { @($clientAccessRawData.ActiveSyncRows) } else { @() }
           AuditAvailable = if ($clientAccessRawData.PSObject.Properties.Match('AuditAvailable').Count -gt 0) { [bool]$clientAccessRawData.AuditAvailable } else { $false }
           AuditFailures = if ($clientAccessRawData.PSObject.Properties.Match('AuditFailures').Count -gt 0) { @($clientAccessRawData.AuditFailures) } else { @() }
           ProtocolFailures = if ($clientAccessRawData.PSObject.Properties.Match('ProtocolFailures').Count -gt 0) { @($clientAccessRawData.ProtocolFailures) } else { @() }
+          ActiveSyncFailures = if ($clientAccessRawData.PSObject.Properties.Match('ActiveSyncFailures').Count -gt 0) { @($clientAccessRawData.ActiveSyncFailures) } else { @() }
         }
       } else {
         Add-ImtSkippedStep -StepName 'MessageClientAccess' -Summary 'Client access correlation not requested for this run.' | Out-Null
@@ -256,14 +258,16 @@ function Invoke-ExchangeMessageAudit {
           Rows = @()
           AuditRows = @()
           ProtocolRows = @()
+          ActiveSyncRows = @()
           AuditAvailable = $false
           AuditFailures = @()
           ProtocolFailures = @()
+          ActiveSyncFailures = @()
         }
       }
 
       $trackingReportResult = Invoke-ImtStep -StepName 'TrackingReport' -Action {
-        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses -ClientAttributionRows $clientAccessData.Rows -ClientAuditRows $clientAccessData.AuditRows -ClientProtocolRows $clientAccessData.ProtocolRows
+        Export-ImtTrackingReports -RunContext $runContext -Results $trackingData.Results -BaseTargetAddresses $identityData.BaseTargetAddresses -ClientAttributionRows $clientAccessData.Rows -ClientAuditRows $clientAccessData.AuditRows -ClientProtocolRows $clientAccessData.ProtocolRows -ClientActiveSyncRows $clientAccessData.ActiveSyncRows
       }
       $trackingReportData = $trackingReportResult.Data
 
